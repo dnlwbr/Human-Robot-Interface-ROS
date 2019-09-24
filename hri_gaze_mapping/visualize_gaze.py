@@ -44,19 +44,20 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
 
-    parser.add_argument('fieldVideo', action='store')
-    parser.add_argument('fieldVideoTimestamps', action='store')
-    parser.add_argument('journal', action='store')
+    parser.add_argument('pathToFolder', action='store')
     args = parser.parse_args()
-    timestamps = readTimestamps(args.fieldVideoTimestamps)
-    journal = readJournal(args.journal)
+    timestamps = readTimestamps(args.pathToFolder + '/FieldData.tsv')
+    journal = readJournal(args.pathToFolder + '/JournalData.tsv')
     matched = match(timestamps, journal, 'sync.timestamp')
-    video = cv2.VideoCapture(args.fieldVideo)
+    video = cv2.VideoCapture(args.pathToFolder + '/Field.mp4')
 
     # Check if total number of frames equals number of timestamps
     assert video.get(cv2.CAP_PROP_FRAME_COUNT) == len(timestamps)
 
-    mapper = GazeMapper('robot_view.jpg', video)
+    # Starting frame if desired
+    video.set(cv2.CAP_PROP_POS_FRAMES, len(timestamps)-1)
+
+    mapper = GazeMapper(args.pathToFolder + '/robot.jpg', video, args.pathToFolder)
 
     while True:
         ret, frame = video.read()
