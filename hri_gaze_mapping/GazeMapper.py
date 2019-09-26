@@ -2,20 +2,16 @@ import cv2
 import numpy as np
 
 
+GOOD_MATCH_PERCENT = 0.15
+
+
 class GazeMapper:
     def __init__(self, ref_filename, videoCap, path):
-        self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
-        self.parameters = cv2.aruco.DetectorParameters_create()
-        self.parameters.markerBorderBits = 2
-        self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         self.saveToPath = path
-
         self.ref = cv2.imread(ref_filename, cv2.IMREAD_ANYCOLOR)
-        self.corners, self.ids, _ = self.detect(self.ref)
-
-        self.ids = self.ids.flatten()
+        self.kp, self.des = self.detect(self.ref)
         self.refDimensions = self.ref.shape
-        self.corners = np.asarray(self.corners).reshape(4*len(self.ids), 2)
+
         # self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
         # self.out_field = cv2.VideoWriter(self.saveToPath+'/gaze_out.mp4', self.fourcc, 30,
@@ -26,14 +22,17 @@ class GazeMapper:
         # self.out_ref_nogaze = cv2.VideoWriter(self.saveToPath+'/no_gaze_out_ref.mp4', self.fourcc, 30,
         #                                       (int(self.refDimensions[1]), int(self.refDimensions[0])))
 
-        assert len(self.ids) >= 4, 'Reference image must contain at least four markers'
-
     def detect(self, img):
         if np.shape(img)[2] == 3:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else:
             gray = img
-        return cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.parameters)
+
+        # Initiate ORB detector
+        orb = cv2.ORB_create()
+        # find the keypoints and descriptors with ORB
+        kp, des = orb.detectAndCompute(gray, None)
+        return kp, des
 
     def release(self):
         # self.out_field.release()
@@ -53,45 +52,48 @@ class GazeMapper:
         # self.out_field.write(field)
         cv2.imwrite(self.saveToPath + '/gaze_out.jpg', field)
 
-        corners, ids, _ = self.detect(img)
+        # x_crop = 50#np.shape(img)[1] * 0.2
+        # y_crop = 50#np.shape(img)[0] * 0.1
+        # img = img[gazepoint[1]-y_crop:gazepoint[1]+y_crop, gazepoint[0]-x_crop:gazepoint[0]+x_crop]
 
-        if np.all(ids is not None):
-            ids = ids.flatten()
-            corners = np.asarray(corners).reshape(4*len(ids), 2)
-            matching_ids = np.intersect1d(self.ids, ids)
-            if len(matching_ids) > 0:
-                src = []
-                dst = []
+        kp, des = self.detect(img)
 
-                def addCorners(matching_id, ids_list, corners_list, matched_corners_list):
-                    idx = np.nonzero(matching_id == ids_list)[0][0]
-                    for corner in corners_list[4*idx:4*idx+4, :]:
-                        matched_corners_list.append(corner)
+        # create BFMatcher object
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
-                for matching_id in matching_ids:
-                    addCorners(matching_id, ids, corners, src)  # from current frame
-                    addCorners(matching_id, self.ids, self.corners, dst)  # to reference
+        # Match descriptors.
+        matches = bf.match(des, self.des)
 
-                assert len(src) == len(dst)
+        # Sort them in the order of their distance.
+        matches = sorted(matches, key=lambda x: x.distance)
 
-                src = np.float32(src)
-                dst = np.float32(dst)
+        # Remove not so good matches
+        numGoodMatches = int(len(matches) * GOOD_MATCH_PERCENT)
+        matches = matches[:numGoodMatches]
 
-                h, mask = cv2.findHomography(src, dst)
+        # draw keypoints and matches
+        # features_img = cv2.drawKeypoints(img, kp, None, color=(0, 255, 0), flags=0)
+        match_img = cv2.drawMatches(img, kp, self.ref, self.kp, matches, None, flags=0)
+        cv2.imwrite(self.saveToPath + '/features.jpg', match_img)
 
-                warped_nogaze = cv2.warpPerspective(img, h, (self.ref.shape[1], self.ref.shape[0]))
-                # self.out_ref_nogaze.write(warped_nogaze)
-                cv2.imwrite(self.saveToPath + '/no_gaze_out_ref.jpg', warped_nogaze)
+        # extract the matched keypoints
+        src = np.float32([kp[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
+        dst = np.float32([self.kp[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
 
-                # Robot camera
-                robot_img = show_circle(img, gazepoint, 20)
-                warped_gaze = cv2.warpPerspective(robot_img, h, (self.ref.shape[1], self.ref.shape[0]))
-                # warped_preview = cv2.resize(warped_gaze, None, fx=0.1, fy=0.1)
-                # cv2.imshow("ref", warped_preview)
-                # self.out_ref.write(warped_gaze)
-                cv2.imwrite(self.saveToPath + '/gaze_out_ref.jpg', warped_gaze)
+        H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
 
-                # in stimulus coordinate
-                src = np.float32([[[gazepoint[0], gazepoint[1]]]])
-                dst = cv2.perspectiveTransform(src, h)
-                cv2.imwrite(self.saveToPath + '/stimulus.jpg', show_circle(self.ref, dst[0][0], 30))
+        warped_nogaze = cv2.warpPerspective(img, H, (self.ref.shape[1], self.ref.shape[0]))
+        # self.out_ref_nogaze.write(warped_nogaze)
+        cv2.imwrite(self.saveToPath + '/no_gaze_out_ref.jpg', warped_nogaze)
+
+        robot_img = show_circle(img, gazepoint, 20)
+        warped_gaze = cv2.warpPerspective(robot_img, H, (self.ref.shape[1], self.ref.shape[0]))
+        # warped_preview = cv2.resize(warped_gaze, None, fx=0.1, fy=0.1)
+        # cv2.imshow("ref", warped_preview)
+        # self.out_ref.write(warped_gaze)
+        cv2.imwrite(self.saveToPath + '/gaze_out_ref.jpg', warped_gaze)
+
+        # in robot_gaze coordinate
+        src = np.float32([[[gazepoint[0], gazepoint[1]]]])
+        dst = cv2.perspectiveTransform(src, H)
+        cv2.imwrite(self.saveToPath + '/robot_gaze.jpg', show_circle(self.ref, dst[0][0], 50))
