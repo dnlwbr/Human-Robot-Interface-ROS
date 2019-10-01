@@ -77,15 +77,15 @@ class GazeMapper:
                 src = np.float32(src)
                 dst = np.float32(dst)
 
-                h, mask = cv2.findHomography(src, dst)
+                H, mask = cv2.findHomography(src, dst)
 
-                warped_nogaze = cv2.warpPerspective(img, h, (self.ref.shape[1], self.ref.shape[0]))
+                warped_nogaze = cv2.warpPerspective(img, H, (self.ref.shape[1], self.ref.shape[0]))
                 # self.out_ref_nogaze.write(warped_nogaze)
                 cv2.imwrite(self.saveToPath + '/no_gaze_out_ref.jpg', warped_nogaze)
 
                 # Robot camera
                 robot_img = show_circle(img, gazepoint, 20)
-                warped_gaze = cv2.warpPerspective(robot_img, h, (self.ref.shape[1], self.ref.shape[0]))
+                warped_gaze = cv2.warpPerspective(robot_img, H, (self.ref.shape[1], self.ref.shape[0]))
                 # warped_preview = cv2.resize(warped_gaze, None, fx=0.1, fy=0.1)
                 # cv2.imshow("ref", warped_preview)
                 # self.out_ref.write(warped_gaze)
@@ -93,5 +93,7 @@ class GazeMapper:
 
                 # in stimulus coordinate
                 src = np.float32([[[gazepoint[0], gazepoint[1]]]])
-                dst = cv2.perspectiveTransform(src, h)
-                cv2.imwrite(self.saveToPath + '/stimulus.jpg', show_circle(self.ref, dst[0][0], 30))
+                dst = cv2.perspectiveTransform(src, H)
+                print("Gaze point - Eyetracker: " + str(src))
+                print("Gaze point - Robot: " + str(dst))
+                cv2.imwrite(self.saveToPath + '/robot_gaze.jpg', show_circle(self.ref, dst[0][0], 30))
