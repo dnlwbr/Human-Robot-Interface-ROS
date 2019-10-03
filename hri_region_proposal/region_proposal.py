@@ -1,8 +1,6 @@
-#!/usr/bin/env python
-
 """
 Usage:
-    ./region_proposal.py input_image (f|q|s)
+    python3 region_proposal.py input_image (f|q|s)
     f=fast, q=quality, s=single
 Use "l" to display less rects, 'm' to display more rects, "q" to quit.
 """
@@ -11,25 +9,18 @@ import sys
 import cv2
 
 
-if __name__ == '__main__':
-    # If image path and f/q is not passed as command
-    # line arguments, quit and display help message
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
-
+def main(img, gazepoint, method):
     # speed-up using multithreads
     cv2.setUseOptimized(True)
     cv2.setNumThreads(4)
 
-    # read image
-    img = cv2.imread(sys.argv[1])
+    # Get image height/width
     img_height, img_width = img.shape[:2]
 
+    # Ignore boxes bigger than 70% of the height/width
+    ignore = 0.7
+
     # resize image
-    # newHeight = 200
-    # newWidth = int(img.shape[1] * 200 / img.shape[0])
-    # img = cv2.resize(img, (newWidth, newHeight))
     resize_scale = 0.25
     img = cv2.resize(img, None, fx=resize_scale, fy=resize_scale)
 
@@ -40,15 +31,15 @@ if __name__ == '__main__':
     ss.setBaseImage(img)
 
     # Switch to fast but low recall Selective Search method
-    if sys.argv[2] == 'f':
+    if method == 'f':
         ss.switchToSelectiveSearchFast()
 
     # Switch to high recall but slow Selective Search method
-    elif sys.argv[2] == 'q':
+    elif method == 'q':
         ss.switchToSelectiveSearchQuality()
 
     # Switch to Single Strategy
-    elif sys.argv[2] == 's':
+    elif method == 's':
         ss.switchToSingleStrategy()
 
     # if argument is neither f,q nor s print help message
@@ -62,13 +53,16 @@ if __name__ == '__main__':
 
     # number of region proposals to show
     numShowRects = 100
-    # increment to increase/decrease total number
-    # of reason proposals to be shown
+    # increment to increase/decrease total number reason proposals to be shown
     increment = 50
 
-    first = True
+    # Marked box
+    marked = 1
 
     while True:
+        # Initialise number of found boxes
+        found = 0
+
         # create a copy of original image
         imOut = img.copy()
 
@@ -77,36 +71,71 @@ if __name__ == '__main__':
             # draw rectangle for region proposal till numShowRects
             if i < numShowRects:
                 x, y, w, h = rect
-                if x <= 767*0.25 <= x + w and y <= 585*0.25 <= y + h \
-                        and w < img_width*0.7*resize_scale and h < img_height*0.7*resize_scale:
+                if x <= gazepoint[0]*resize_scale <= x + w and y <= gazepoint[1]*resize_scale <= y + h \
+                        and w < img_width*resize_scale*ignore and h < img_height*resize_scale*ignore:
                     cv2.rectangle(imOut, (x, y), (x + w, y + h), (0, 255, 0), 1, cv2.LINE_AA)
-                    if first:
+                    found += 1
+                    if found == marked:
                         cv2.rectangle(imOut, (x, y), (x + w, y + h), (255, 0, 0), 1, cv2.LINE_AA)
-                        first_rect = rect / resize_scale
-                        first = False
+                        marked_rect = rect / resize_scale
             else:
                 break
 
-        print("First Region: " + str(first_rect))
+        print("Marked Region: " + str(marked_rect))
 
         # show output
         imOut = cv2.resize(imOut, None, fx=1/(2*resize_scale), fy=1/(2*resize_scale))
-        cv2.imwrite('/home/weber/Videos/Test/tisch_marker/robot_gaze_RP.jpg', imOut)
-        cv2.imshow("Output", imOut)
+        cv2.imwrite('/home/weber/Videos/Test/tisch_marker/robot_gaze_box.jpg', imOut)
+        cv2.imshow("Region proposal", imOut)
 
         # record key press
         key = cv2.waitKey(0) & 0xFF
 
+        # b is pressed
+        if key == ord('b'):
+            # mark previous box
+            if marked > 1:
+                marked -= 1
+        # n is pressed
+        if key == ord('n'):
+            # mark next box
+            if marked < found:
+                marked += 1
         # m is pressed
-        if key == 109:
+        elif key == ord('m'):
             # increase total number of rectangles to show by increment
             numShowRects += increment
         # l is pressed
-        elif key == 108 and numShowRects > increment:
+        elif key == ord('l') and numShowRects > increment:
             # decrease total number of rectangles to show by increment
             numShowRects -= increment
-        # q is pressed
-        elif key == 113:
+        # Spacebar is pressed
+        elif key == 32:
+            # Finish with current values
             break
+        # q or Esc is pressed
+        elif key == ord('q') or key == 27:
+            print("Abort.")
+            sys.exit(1)
+
     # close image show window
     cv2.destroyAllWindows()
+
+    return marked_rect
+
+
+if __name__ == '__main__':
+    # If image path and f/q/s is not passed as command line arguments, quit and display help message
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+
+    # read image
+    input_image = cv2.imread(sys.argv[1])
+
+    # read method
+    method = sys.argv[2]
+
+    gazepoint = [763.93665, 576.1394]
+
+    main(input_image, gazepoint, method)

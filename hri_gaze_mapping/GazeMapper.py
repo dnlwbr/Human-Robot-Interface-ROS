@@ -3,28 +3,19 @@ import numpy as np
 
 
 class GazeMapper:
-    def __init__(self, ref_filename, videoCap, path):
+    def __init__(self, ref_file, path):
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
         self.parameters = cv2.aruco.DetectorParameters_create()
         self.parameters.markerBorderBits = 2
         self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         self.saveToPath = path
 
-        self.ref = cv2.imread(ref_filename, cv2.IMREAD_ANYCOLOR)
+        self.ref = ref_file
         self.corners, self.ids, _ = self.detect(self.ref)
 
         self.ids = self.ids.flatten()
         self.refDimensions = self.ref.shape
         self.corners = np.asarray(self.corners).reshape(4*len(self.ids), 2)
-        # self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-
-        # self.out_field = cv2.VideoWriter(self.saveToPath+'/gaze_out.mp4', self.fourcc, 30,
-        #                                  (int(videoCap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        #                                   int(videoCap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
-        # self.out_ref = cv2.VideoWriter(self.saveToPath+'/gaze_out_ref.mp4', self.fourcc, 30,
-        #                                (int(self.refDimensions[1]), int(self.refDimensions[0])))
-        # self.out_ref_nogaze = cv2.VideoWriter(self.saveToPath+'/no_gaze_out_ref.mp4', self.fourcc, 30,
-        #                                       (int(self.refDimensions[1]), int(self.refDimensions[0])))
 
         assert len(self.ids) >= 4, 'Reference image must contain at least four markers'
 
@@ -35,12 +26,6 @@ class GazeMapper:
             gray = img
         return cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.parameters)
 
-    def release(self):
-        # self.out_field.release()
-        # self.out_ref.release()
-        # self.out_ref_nogaze.release()
-        pass
-
     def map(self, img, gazepoint):
         def show_circle(img, gp, radius):
             tmp = img.copy()
@@ -48,10 +33,9 @@ class GazeMapper:
             return tmp
 
         field = show_circle(img, gazepoint, 20)
-        # preview = cv2.resize(field, None, fx=0.4, fy=0.4)
-        # cv2.imshow("field", preview)
-        # self.out_field.write(field)
-        cv2.imwrite(self.saveToPath + '/gaze_out.jpg', field)
+        # field_preview = cv2.resize(field, None, fx=0.4, fy=0.4)
+        # cv2.imshow("field", field_preview)
+        cv2.imwrite(self.saveToPath + '/field.jpg', field)
 
         corners, ids, _ = self.detect(img)
 
@@ -77,23 +61,15 @@ class GazeMapper:
                 src = np.float32(src)
                 dst = np.float32(dst)
 
+                # Transform human gaze to robot view
                 H, mask = cv2.findHomography(src, dst)
-
-                warped_nogaze = cv2.warpPerspective(img, H, (self.ref.shape[1], self.ref.shape[0]))
-                # self.out_ref_nogaze.write(warped_nogaze)
-                cv2.imwrite(self.saveToPath + '/no_gaze_out_ref.jpg', warped_nogaze)
-
-                # Robot camera
-                robot_img = show_circle(img, gazepoint, 20)
-                warped_gaze = cv2.warpPerspective(robot_img, H, (self.ref.shape[1], self.ref.shape[0]))
-                # warped_preview = cv2.resize(warped_gaze, None, fx=0.1, fy=0.1)
-                # cv2.imshow("ref", warped_preview)
-                # self.out_ref.write(warped_gaze)
-                cv2.imwrite(self.saveToPath + '/gaze_out_ref.jpg', warped_gaze)
-
-                # in stimulus coordinate
                 src = np.float32([[[gazepoint[0], gazepoint[1]]]])
                 dst = cv2.perspectiveTransform(src, H)
-                print("Gaze point - Eyetracker: " + str(src))
-                print("Gaze point - Robot: " + str(dst))
-                cv2.imwrite(self.saveToPath + '/robot_gaze.jpg', show_circle(self.ref, dst[0][0], 30))
+
+                # Robot
+                robot_gaze = show_circle(self.ref, dst[0][0], 30)
+                cv2.imwrite(self.saveToPath + '/robot_gaze.jpg', robot_gaze)
+                robot_preview = cv2.resize(robot_gaze, None, fx=0.5, fy=0.5)
+                cv2.imshow("Robot with human gaze", robot_preview)
+
+                return src[0][0], dst[0][0]

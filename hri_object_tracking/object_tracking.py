@@ -6,15 +6,7 @@ from imutils.video import VideoStream
 from imutils.video import FPS
 
 
-if __name__ == '__main__':
-
-    # construct the argument parser and parse the arguments
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-v", "--video", type=str, help="path to input video file")
-    ap.add_argument("-t", "--tracker", type=str, default="kcf", help="OpenCV object tracker type")
-    ap.add_argument("-b", "--box", type=int, default=None, help="Initial bounding box")
-    args = vars(ap.parse_args())
-
+def main(args):
     # extract the OpenCV version info
     (major, minor) = cv2.__version__.split(".")[:2]
 
@@ -106,8 +98,7 @@ if __name__ == '__main__':
         cv2.imshow("Frame", frame)
         key = cv2.waitKey(1) & 0xFF
 
-        # if the 's' key is selected, we are going to "select" a bounding
-        # box to track
+        # if the 's' key is selected, we are going to "select" a bounding box to track
         if key == ord("s"):
             # select the bounding box of the object we want to track (make
             # sure you press ENTER or SPACE after selecting the ROI)
@@ -132,3 +123,15 @@ if __name__ == '__main__':
 
     # close all windows
     cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+
+    # construct the argument parser and parse the arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--video", type=str, help="path to input video file")
+    parser.add_argument("-t", "--tracker", type=str, default="kcf", help="OpenCV object tracker type")
+    parser.add_argument("-b", "--box", type=int, default=None, help="Initial bounding box")
+    args = vars(parser.parse_args())
+
+    main(args)

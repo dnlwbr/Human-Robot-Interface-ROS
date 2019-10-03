@@ -40,40 +40,51 @@ def match(timestamps, source, key_name='timestamp'):
     return data
 
 
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
-
-    parser.add_argument('pathToFolder', action='store')
-    args = parser.parse_args()
+def main(args, robot_view=None):
     timestamps = readTimestamps(args.pathToFolder + '/FieldData.tsv')
     journal = readJournal(args.pathToFolder + '/JournalData.tsv')
     matched = match(timestamps, journal, 'sync.timestamp')
-    video = cv2.VideoCapture(args.pathToFolder + '/Field.mp4')
+    human_view = cv2.VideoCapture(args.pathToFolder + '/Field.mp4')
+    if robot_view is None:
+        robot_filename = args.pathToFolder + '/robot.jpg'
+        robot_view = cv2.imread(robot_filename, cv2.IMREAD_ANYCOLOR)
 
     # Check if total number of frames equals number of timestamps
-    assert video.get(cv2.CAP_PROP_FRAME_COUNT) == len(timestamps)
+    assert human_view.get(cv2.CAP_PROP_FRAME_COUNT) == len(timestamps)
 
     # Starting frame if desired
-    video.set(cv2.CAP_PROP_POS_FRAMES, len(timestamps)-1)
+    human_view.set(cv2.CAP_PROP_POS_FRAMES, len(timestamps) - 1)
 
-    mapper = GazeMapper(args.pathToFolder + '/robot.jpg', video, args.pathToFolder)
+    mapper = GazeMapper(robot_view, args.pathToFolder)
+
+    human_gaze = []
+    robot_gaze = []
 
     while True:
-        ret, frame = video.read()
+        ret, frame = human_view.read()
         if not ret:
             break
 
-        cur_frame_idx = int(video.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        cur_frame_idx = int(human_view.get(cv2.CAP_PROP_POS_FRAMES)) - 1
 
         get = lambda name: int(round(np.median([float(entry[name]) for entry in matched[cur_frame_idx]['matches']])))
         x = get('field.gaze.x')
         y = get('field.gaze.y')
 
-        mapper.map(frame, (x, y))
-        key = cv2.waitKey(30) & 0xFF
+        human_gaze, robot_gaze = mapper.map(frame, (x, y))
 
-        if key == ord('q'):
+        key = cv2.waitKey(30) & 0xFF
+        # q or Esc is pressed
+        if key == ord('q') or key == 27:
             break
 
-    mapper.release()
+    return human_gaze, robot_gaze
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
+    parser.add_argument('pathToFolder', action='store')
+    args = parser.parse_args()
+
+    main(args)
