@@ -109,8 +109,8 @@ def main(img, gazepoint, method):
         elif key == ord('l') and numShowRects > increment:
             # decrease total number of rectangles to show by increment
             numShowRects -= increment
-        # Spacebar is pressed
-        elif key == 32:
+        # ENTER or SPACE is pressed
+        elif key == 13 or key == 32:
             # Finish with current values
             break
         # q or Esc is pressed

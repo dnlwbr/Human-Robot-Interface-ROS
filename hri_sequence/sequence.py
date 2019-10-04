@@ -17,26 +17,25 @@ import object_tracking
 
 def main(args):
     # Get robot snapshot
-    # cam = cv2.VideoCapture(0)
-    robot_filename = args.pathToFolder + '/robot.jpg'
-    frame = cv2.imread(robot_filename, cv2.IMREAD_ANYCOLOR)
-    #
+    cam = cv2.VideoCapture(0)
+    # robot_filename = args.pathToFolder + '/robot.jpg'
+    # frame = cv2.imread(robot_filename, cv2.IMREAD_ANYCOLOR)
 
     while True:
-        # ret, frame = cam.read()
-        #
-        # if not ret:
-        #     break
+        ret, frame = cam.read()
+
+        if not ret:
+            break
 
         # Gaze mapping
         human_gaze, robot_gaze = gaze_mapping.main(args, frame)
 
         key = cv2.waitKey(200) & 0xFF
 
-        # Spacebar is pressed
-        if key == 32:
+        # ENTER or SPACE is pressed
+        if key == 13 or key == 32:
             snapshot_robot = frame
-            cv2.imwrite("snapshot_robot.jpg", frame)
+            cv2.imwrite(args.pathToFolder + 'snapshot_robot.jpg', frame)
             print("Snapshot taken.")
             break
         # q or Esc is pressed
@@ -51,8 +50,7 @@ def main(args):
     box = region_proposal.main(frame, robot_gaze, "s")
 
     # Object tracking
-    # object_tracking.main()
-    # object_tracking.py [-h] [-v VIDEO] [-t TRACKER] [-b BOX]
+    object_tracking.main(args, box)
 
 
 if __name__ == '__main__':
@@ -62,8 +60,9 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Parse input argument
-    parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
+    parser = argparse.ArgumentParser(description='Map gaze on robot view, propose ROI and track bounding box.')
     parser.add_argument('pathToFolder', action='store')
+    parser.add_argument("-t", "--tracker", type=str, default="kcf", help="OpenCV object tracker type")
     args = parser.parse_args()
 
     main(args)
