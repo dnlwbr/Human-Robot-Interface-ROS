@@ -7,7 +7,7 @@ class GazeMapper:
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
         self.parameters = cv2.aruco.DetectorParameters_create()
         self.parameters.markerBorderBits = 2
-        self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        # self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         self.ref, self.img = None, None
         self.ref_corners, self.img_corners = None, None
         self.ref_ids, self.img_ids = None, None

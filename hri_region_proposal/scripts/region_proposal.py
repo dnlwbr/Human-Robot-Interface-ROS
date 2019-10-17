@@ -1,12 +1,38 @@
-"""
-Usage:
-    python3 region_proposal.py input_image (f|q|s)
-    f=fast, q=quality, s=single
-Use "l" to display less rects, 'm' to display more rects, "q" to quit.
-"""
+#!/usr/bin/env python
 
+import rospy
 import sys
 import cv2
+import message_filters
+from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray
+from cv_bridge import CvBridge
+
+
+class InstanceHelper:
+    def __init__(self):
+        self.bridge = CvBridge()
+        self.robot_image_sub = message_filters.Subscriber("/kinect2/sd/image_color_rect", Image)
+        self.robot_gaze_sub = message_filters.Subscriber("/hri_gaze_mapping/robot_gaze", Float32MultiArray)
+        self.region_proposal_pub = rospy.Publisher('/hri_region_proposal/region_proposal', Float32MultiArray, queue_size=10)
+        self.region_proposal = None
+        self.proposed = False
+
+    def callback(self, rgb_msg, robot_gaze):
+        # record key press
+        key = cv2.waitKey(30) & 0xFF
+
+        # ENTER or SPACE is pressed
+        if not self.proposed and (key == 13 or key == 32):
+            self.proposed = True
+            robot_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+            self.region_proposal = main(robot_image_rgb, robot_gaze, 's')
+        # q or Esc is pressed
+        elif key == ord('q') or key == 27:
+            self.proposed = False
+            self.region_proposal = None
+
+        helper.region_proposal_pub.publish(self.region_proposal)
 
 
 def main(img, gazepoint, method):
@@ -44,7 +70,7 @@ def main(img, gazepoint, method):
 
     # if argument is neither f,q nor s print help message
     else:
-        print(__doc__)
+        print("No strategy specified")
         sys.exit(1)
 
     # run selective search segmentation on input image
@@ -125,17 +151,17 @@ def main(img, gazepoint, method):
 
 
 if __name__ == '__main__':
-    # If image path and f/q/s is not passed as command line arguments, quit and display help message
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
 
-    # read image
-    input_image = cv2.imread(sys.argv[1])
+    rospy.init_node('hri_region_proposal', anonymous=True)
 
-    # read method
-    method = sys.argv[2]
+    helper = InstanceHelper()
+    ts = message_filters.ApproximateTimeSynchronizer([helper.robot_image_sub, helper.robot_gaze_sub], 10, 0.1)
+    ts.registerCallback(helper.callback)
 
-    gazepoint = [763.93665, 576.1394]
+    try:
+        # spin() keeps python from exiting until this node is stopped
+        rospy.spin()
+    except KeyboardInterrupt:
+        print("Shutting down gaze mapping")
 
-    main(input_image, gazepoint, method)
+    # unsubscribe gaze mapping

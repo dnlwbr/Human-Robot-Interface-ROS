@@ -15,14 +15,14 @@ from GazeMapper import GazeMapper
 
 class InstanceHelper:
     def __init__(self, args):
-        self.pathToFolder = args[0].pathToFolder
+        self.pathToFolder = args.pathToFolder
         self.bridge = CvBridge()
         self.mapper = GazeMapper()
-        self.robot_image_sub = rospy.Subscriber("/kinect2/sd/image_color_rect", Image, args)
-        self.robot_info_sub = message_filters.Subscriber('/kinect2/sd/camera_info', CameraInfo, args)
-        self.robot_gaze_pub = rospy.Publisher('chatter', Float32MultiArray, queue_size=10)
+        self.robot_image_sub = message_filters.Subscriber("/kinect2/sd/image_color_rect", Image)
+        self.robot_info_sub = message_filters.Subscriber('/kinect2/sd/camera_info', CameraInfo)
+        self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
 
-    def callback(self, rgb_msg, camera_info, call_args):
+    def callback(self, rgb_msg):
         timestamps = readTimestamps(self.pathToFolder + '/FieldData.tsv')
         journal = readJournal(self.pathToFolder + '/JournalData.tsv')
         matched = match(timestamps, journal, 'sync.timestamp')
@@ -89,11 +89,11 @@ if __name__ == '__main__':
     parser.add_argument('pathToFolder', action='store')
     args = parser.parse_args()
 
-    rospy.init_node('gaze_mapper', anonymous=True)
+    rospy.init_node('hri_gaze_mapping', anonymous=True)
 
     helper = InstanceHelper(args)
 
-    ts = message_filters.ApproximateTimeSynchronizer([helper.robot_image_sub, helper.robot_info_sub], 10, 0.2)
+    ts = message_filters.ApproximateTimeSynchronizer([helper.robot_image_sub, helper.robot_info_sub], 10, 0.1)
     ts.registerCallback(helper.callback)
 
     try:
