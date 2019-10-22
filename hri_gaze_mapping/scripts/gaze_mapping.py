@@ -22,7 +22,7 @@ class InstanceHelper:
         self.robot_info_sub = message_filters.Subscriber('/kinect2/sd/camera_info', CameraInfo)
         self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
 
-    def callback(self, rgb_msg):
+    def callback(self, rgb_msg, camera_info):
         timestamps = readTimestamps(self.pathToFolder + '/FieldData.tsv')
         journal = readJournal(self.pathToFolder + '/JournalData.tsv')
         matched = match(timestamps, journal, 'sync.timestamp')
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('pathToFolder', action='store')
     args = parser.parse_args()
 
-    rospy.init_node('hri_gaze_mapping', anonymous=True)
+    rospy.init_node('hri_gaze_mapping')
 
     helper = InstanceHelper(args)
 

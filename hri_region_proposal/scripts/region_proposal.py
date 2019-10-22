@@ -152,7 +152,7 @@ def main(img, gazepoint, method):
 
 if __name__ == '__main__':
 
-    rospy.init_node('hri_region_proposal', anonymous=True)
+    rospy.init_node('hri_region_proposal')
 
     helper = InstanceHelper()
     ts = message_filters.ApproximateTimeSynchronizer([helper.robot_image_sub, helper.robot_gaze_sub], 10, 0.1)
