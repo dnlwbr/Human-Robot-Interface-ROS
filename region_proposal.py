@@ -5,11 +5,12 @@ Usage:
 Use "l" to display less rects, 'm' to display more rects, "q" to quit.
 """
 
-import sys
+import argparse
 import cv2
+import sys
 
 
-def main(img, gazepoint, method):
+def main(img, gazepoint, method, path='.'):
     # speed-up using multithreads
     cv2.setUseOptimized(True)
     cv2.setNumThreads(4)
@@ -85,7 +86,7 @@ def main(img, gazepoint, method):
 
         # show output
         imOut = cv2.resize(imOut, None, fx=1/(2*resize_scale), fy=1/(2*resize_scale))
-        cv2.imwrite('/home/weber/Videos/Test/tisch_marker/robot_gaze_box.jpg', imOut)
+        cv2.imwrite(path + '/robot_gaze_box.jpg', imOut)
         cv2.imshow("Region proposal", imOut)
 
         # record key press
