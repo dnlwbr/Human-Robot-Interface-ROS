@@ -19,23 +19,28 @@ class GazeMapper:
         self.ref_ids, self.img_ids = None, None
         self.ref_dimensions, self.img_dimensions = None, None
 
-    def update(self, ref_img, img):
+    def update(self, img, ref_img):
         self.ref = ref_img
         self.img = img
         self.ref_dimensions = self.ref.shape
         self.img_dimensions = self.img.shape
         self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
         self.img_corners, self.img_ids, _ = self.detect(self.img)
-        self.ref_ids = self.ref_ids.flatten()
-        self.img_ids = self.img_ids.flatten()
 
         if np.all(self.ref_ids is not None):
+            self.ref_ids = self.ref_ids.flatten()
             self.ref_corners = np.asarray(self.ref_corners).reshape(4*len(self.ref_ids), 2)
 
         if np.all(self.img_ids is not None):
+            self.img_ids = self.img_ids.flatten()
             self.img_corners = np.asarray(self.img_corners).reshape(4 * len(self.img_ids), 2)
 
         assert len(self.ref_ids) >= 4, 'Reference image must contain at least four markers'
+
+        if np.all(self.ref_ids is not None) and np.all(self.img_ids is not None):
+            return True
+        else:
+            return False
 
     def detect(self, img):
         if np.shape(img)[2] == 3:
@@ -74,9 +79,10 @@ class GazeMapper:
 
                 # Previews
                 field_preview = cv2.resize(field, None, fx=0.4, fy=0.4)
-                cv2.imshow("field", field_preview)
+                cv2.imshow("Field view", field_preview)
                 robot_gaze = show_circle(self.ref, dst[0][0], 20)
                 robot_preview = cv2.resize(robot_gaze, None, fx=0.5, fy=0.5)
                 cv2.imshow("Robot with human gaze", robot_preview)
+                cv2.waitKey(1)
 
                 return src[0][0], dst[0][0]

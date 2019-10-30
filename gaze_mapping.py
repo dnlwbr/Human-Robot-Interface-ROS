@@ -1,95 +1,84 @@
-import csv
-import argparse
+#!/usr/bin/env python
 import cv2
 import numpy as np
+import rospy
+import socket
+# Ros Messages (cv_bridge does not support CompressedImage in python)
+from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import Float32MultiArray
 
 from GazeMapper import GazeMapper
 from GazeMapper import show_circle
 
 
-def main(args, robot_view=None):
-    timestamps = readTimestamps(args.pathToFolder + '/FieldData.tsv')
-    journal = readJournal(args.pathToFolder + '/JournalData.tsv')
-    matched = match(timestamps, journal, 'sync.timestamp')
-    human_view = cv2.VideoCapture(args.pathToFolder + '/Field.mp4')
-    if robot_view is None:
-        robot_filename = args.pathToFolder + '/robot.jpg'
-        robot_view = cv2.imread(robot_filename, cv2.IMREAD_ANYCOLOR)
+class InstanceHelper:
+    def __init__(self):
+        self.mapper = GazeMapper()
+        self.window_is_open = False
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("", 2002))
+        self.journal = None
+        self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback,
+                                              queue_size=1, buff_size=2**20)
+        rospy.loginfo("subscribed to /EyeRecTooImage/compressed")
+        # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
+        self.robot_gaze = None
 
-    # Check if total number of frames equals number of timestamps
-    assert human_view.get(cv2.CAP_PROP_FRAME_COUNT) == len(timestamps)
+    def callback(self, ros_data):
+        human_arr = np.fromstring(ros_data.data, np.uint8)
+        human_img = cv2.imdecode(human_arr, cv2.IMREAD_COLOR)
+        self.read_journal()
+        robot_filename = 'robot.jpg'
+        robot_img = cv2.imread(robot_filename, cv2.IMREAD_ANYCOLOR)
 
-    # Starting frame if desired
-    # human_view.set(cv2.CAP_PROP_POS_FRAMES, len(timestamps) - 1)
-
-    mapper = GazeMapper()
-
-    while True:
-        ret, frame = human_view.read()
-        if not ret:
+        try:
+            x = int(round(float(self.journal[2])))  # field.gaze.x
+            y = int(round(float(self.journal[3])))  # field.gaze.y
+        except ValueError:
             exit(1)
 
-        cur_frame_idx = int(human_view.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        ret = self.mapper.update(human_img, robot_img)
+        if ret and self.robot_gaze is None:
+            try:
+                human_gaze, robot_gaze = self.mapper.map((x, y))
+            except TypeError:
+                exit(1)
+            self.window_is_open = True
+            key = cv2.waitKey(100) & 0xFF
+            # ENTER or SPACE is pressed
+            if key == 13 or key == 32:
+                robot_view_gaze = show_circle(robot_img, robot_gaze, 20)
+                cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
 
-        get = lambda name: int(round(np.median([float(entry[name]) for entry in matched[cur_frame_idx]['matches']])))
-        x = get('field.gaze.x')
-        y = get('field.gaze.y')
+                msg = Float32MultiArray()
+                msg.data = robot_gaze
+                rospy.loginfo("(x,y) gaze coordinate: " + str(msg.data))
+                self.robot_gaze = robot_gaze
+                # self.robot_gaze_pub.publish(msg)
+        else:
+            if self.window_is_open is True:
+                cv2.destroyAllWindows()
+                self.window_is_open = False
 
-        mapper.update(robot_view, frame)
-        human_gaze, robot_gaze = mapper.map((x, y))
-
-        key = cv2.waitKey(30) & 0xFF
-        # ENTER or SPACE is pressed
-        if key == 13 or key == 32:
-            # Finish with current values
-            robot_view_gaze = show_circle(robot_view, robot_gaze, 20)
-            cv2.imwrite(args.pathToFolder + '/robot_gaze.jpg', robot_view_gaze)
-            break
-        # q or Esc is pressed
-        elif key == ord('q') or key == 27:
-            exit(1)
-
-    return human_gaze, robot_gaze
-
-
-def readTimestamps(filename):
-    with open(filename, newline='\n') as file:
-        reader = csv.DictReader(file, delimiter='\t')
-        return [float(row['timestamp']) for row in reader]
-
-
-def readJournal(filename):
-    with open(filename, newline='\n') as file:
-        reader = csv.DictReader(file, delimiter='\t')
-        return [row for row in reader]
+    def read_journal(self):
+        data, _ = self.sock.recvfrom(512)  # buffer size is 512
+        data = data.decode('UTF-8')
+        data = data.split("\t")
+        self.journal = data[:54]
 
 
-def match(timestamps, source, key_name='timestamp'):
-    data = [{'timestamp': ts, 'matches': []} for ts in timestamps]
+def main():
+    rospy.init_node('hri_gaze_mapping', disable_signals=True)
+    instance = InstanceHelper()
 
-    current = 0
-    lastIdx = len(data)-1
-    for row in source:
-        ts = float(row[key_name])
+    while not rospy.is_shutdown() and instance.robot_gaze is None:
+        rospy.rostime.wallsleep(0.5)
 
-        # find first entry equal or larger than ts
-        while ts > data[current]['timestamp'] and current < lastIdx:
-            current += 1
+    rospy.signal_shutdown("Gaze mapping finished")
+    print("Shutting down ROS hri_gaze_mapping module")
 
-        timediff = lambda idx: abs(ts - data[idx]['timestamp'])
-
-        # Is current or prev closer to ts?
-        prev = max(0, current-1)
-        matchedIdx = prev if timediff(prev) < timediff(current) else current
-        data[matchedIdx]['matches'].append(row)
-
-    return data
+    return instance.robot_gaze
 
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
-    parser.add_argument('pathToFolder', action='store')
-    args = parser.parse_args()
-
-    main(args)
+    main()

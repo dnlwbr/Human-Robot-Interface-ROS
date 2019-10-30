@@ -67,6 +67,10 @@ def main(img, gazepoint, method, path='.'):
         # create a copy of original image
         imOut = img.copy()
 
+        # check if marked region exists in order to display it on top level
+        marked_rect = None
+        marked_rect_exists = False
+
         # iterate over all the region proposals
         for i, rect in enumerate(rects):
             # draw rectangle for region proposal till numShowRects
@@ -77,12 +81,17 @@ def main(img, gazepoint, method, path='.'):
                     cv2.rectangle(imOut, (x, y), (x + w, y + h), (0, 255, 0), 1, cv2.LINE_AA)
                     found += 1
                     if found == marked:
-                        cv2.rectangle(imOut, (x, y), (x + w, y + h), (255, 0, 0), 1, cv2.LINE_AA)
-                        marked_rect = rect / resize_scale
+                        marked_rect = rect
+                        marked_rect_exists = True
             else:
                 break
 
-        print("Marked Region: " + str(marked_rect))
+        if marked_rect_exists is True:
+            cv2.rectangle(imOut, (marked_rect[0], marked_rect[1]),
+                          (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 1,
+                          cv2.LINE_AA)
+            marked_rect = marked_rect / resize_scale
+            print("Marked Region: " + str(marked_rect))
 
         # show output
         imOut = cv2.resize(imOut, None, fx=1/(2*resize_scale), fy=1/(2*resize_scale))
@@ -117,7 +126,7 @@ def main(img, gazepoint, method, path='.'):
         # q or Esc is pressed
         elif key == ord('q') or key == 27:
             print("Abort.")
-            sys.exit(1)
+            sys.exit(0)
 
     # close image show window
     cv2.destroyAllWindows()
