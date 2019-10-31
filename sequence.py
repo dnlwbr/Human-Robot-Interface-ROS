@@ -21,7 +21,7 @@ def main():
     robot_gaze = gaze_mapping.main()
 
     # Region proposal
-    box = region_proposal.main(robot_view, robot_gaze, "s")  # , path=args.pathToFolder)
+    box = region_proposal.main(robot_view, robot_gaze, "q")  # , path=args.pathToFolder)
 
     # Object tracking
     # object_tracking.main(args, box)
