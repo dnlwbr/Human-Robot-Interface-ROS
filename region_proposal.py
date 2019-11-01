@@ -14,10 +14,10 @@ import sys
 from GazeMapper import show_circle
 
 
-def main(img, gazepoint, method, path='.'):
+def main(img, gazepoints, method, path='.'):
     # speed-up using multithreads
-    cv2.setUseOptimized(True)
-    cv2.setNumThreads(4)
+    # print(cv2.getNumThreads())
+    # cv2.setNumThreads(4)
 
     # Ignore boxes bigger than 70% of the height/width
     ignore = 0.7
@@ -61,8 +61,9 @@ def main(img, gazepoint, method, path='.'):
     # Marked box
     marked = 1
 
-    # Show not only marked bounding box
+    # Toggle unmarked boxes and gaze points
     hide_unmarked = False
+    hide_gp = False
 
     while True:
         # Initialise number of found boxes
@@ -81,8 +82,8 @@ def main(img, gazepoint, method, path='.'):
             # draw rectangle for region proposal till numShowRects
             if i < numShowRects:
                 x, y, w, h = rect
-                if x <= gazepoint[0]*resize_scale <= x + w and y <= gazepoint[1]*resize_scale <= y + h \
-                        and w < img_resized_width*ignore and h < img_resized_height*ignore:
+                if all(x <= gp[0]*resize_scale <= x + w and y <= gp[1]*resize_scale <= y + h
+                       and w < img_resized_width*ignore and h < img_resized_height*ignore for gp in gazepoints):
                     if hide_unmarked is False:
                         cv2.rectangle(img_preview, (x, y), (x + w, y + h), (0, 255, 0), 1, cv2.LINE_AA)
                     found += 1
@@ -91,6 +92,10 @@ def main(img, gazepoint, method, path='.'):
                         marked_rect_exists = True
             else:
                 break
+
+        if hide_gp is False:
+            for gp in gazepoints:
+                img_preview = show_circle(img_preview, gp*resize_scale, 7, thickness=2)
 
         if marked_rect_exists is True:
             cv2.rectangle(img_preview, (marked_rect[0], marked_rect[1]),
@@ -102,11 +107,11 @@ def main(img, gazepoint, method, path='.'):
 
         # show preview
         img_preview = cv2.resize(img_preview, None, fx=1/(2*resize_scale), fy=1/(2*resize_scale))
-        img_preview = show_circle(img_preview, gazepoint/2, 10)
         cv2.imshow("Region proposal", img_preview)
 
         # save image with chosen box
-        img_out = show_circle(img_out, gazepoint, 20)
+        for gp in gazepoints:
+            img_out = show_circle(img_out, gp, 20)
         cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]),
                       (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 2, cv2.LINE_AA)
         cv2.imwrite(path + '/robot_gaze_box.jpg', img_out)
@@ -114,8 +119,12 @@ def main(img, gazepoint, method, path='.'):
         # record key press
         key = cv2.waitKey(0) & 0xFF
 
+        # g is pressed
+        if key == ord('g'):
+            # hide/unhide gaze points
+            hide_gp = not hide_gp
         # h is pressed
-        if key == ord('h'):
+        elif key == ord('h'):
             # hide/unhide unmarked boxes
             hide_unmarked = not hide_unmarked
         # b is pressed
@@ -164,6 +173,6 @@ if __name__ == '__main__':
     # read method
     method = sys.argv[2]
 
-    gazepoint = [763.93665, 576.1394]
+    gazepoints = [[763.93665, 576.1394]]
 
-    main(input_image, gazepoint, method)
+    main(input_image, gazepoints, method)

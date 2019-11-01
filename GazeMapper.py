@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 
 
-def show_circle(img, gp, radius):
+def show_circle(img, gp, radius, thickness=5):
     tmp = img.copy()
-    cv2.circle(tmp, (gp[0], gp[1]), radius, (0, 255, 0), 5)
+    cv2.circle(tmp, (gp[0], gp[1]), radius, (0, 255, 0), thickness)
     return tmp
 
 
@@ -50,8 +50,6 @@ class GazeMapper:
         return cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.parameters)
 
     def map(self, gazepoint):
-        field = show_circle(self.img, gazepoint, 20)
-
         if np.all(self.img_ids is not None):
             matching_ids = np.intersect1d(self.ref_ids, self.img_ids)
             if len(matching_ids) > 0:
@@ -76,13 +74,5 @@ class GazeMapper:
                 H, mask = cv2.findHomography(src, dst)
                 src = np.float32([[[gazepoint[0], gazepoint[1]]]])
                 dst = cv2.perspectiveTransform(src, H)
-
-                # Previews
-                field_preview = cv2.resize(field, None, fx=0.4, fy=0.4)
-                cv2.imshow("Field view", field_preview)
-                robot_gaze = show_circle(self.ref, dst[0][0], 20)
-                robot_preview = cv2.resize(robot_gaze, None, fx=0.5, fy=0.5)
-                cv2.imshow("Robot with human gaze", robot_preview)
-                cv2.waitKey(1)
 
                 return src[0][0], dst[0][0]

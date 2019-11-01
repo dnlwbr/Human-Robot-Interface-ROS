@@ -24,8 +24,9 @@ class InstanceHelper:
                                               queue_size=1, buff_size=2**20)
         rospy.loginfo("subscribed to /EyeRecTooImage/compressed")
         self.robot_img = cv2.imread('robot.jpg', cv2.IMREAD_ANYCOLOR)
-        self.robot_gaze = None
         # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
+        self.human_gaze = []
+        self.robot_gaze = []
 
     def callback(self, ros_data):
         human_arr = np.fromstring(ros_data.data, np.uint8)
@@ -38,6 +39,21 @@ class InstanceHelper:
         data = data.split("\t")
         self.journal = data[:54]
 
+    def gaze_preview(self, gp_human, gp_robot):
+        field_preview = show_circle(self.human_img, gp_human, 20)
+        robot_preview = show_circle(self.robot_img, gp_robot, 20)
+
+        for hgp in self.human_gaze:
+            field_preview = show_circle(field_preview, hgp, 20)
+        for rgp in self.robot_gaze:
+            robot_preview = show_circle(robot_preview, rgp, 20)
+
+        field_preview = cv2.resize(field_preview, None, fx=0.4, fy=0.4)
+        robot_preview = cv2.resize(robot_preview, None, fx=0.5, fy=0.5)
+        cv2.imshow("Field view", field_preview)
+        cv2.imshow("Robot with human gaze", robot_preview)
+        self.window_is_open = True
+
 
 def main():
     rospy.init_node('hri_gaze_mapping', disable_signals=True)
@@ -45,7 +61,7 @@ def main():
 
     rospy.sleep(0.5)
 
-    while not rospy.is_shutdown() and instance.robot_gaze is None:
+    while not rospy.is_shutdown():
 
         try:
             x = int(round(float(instance.journal[2])))  # field.gaze.x
@@ -60,19 +76,28 @@ def main():
                 human_gaze, robot_gaze = instance.mapper.map((x, y))
             except TypeError:
                 continue
-            instance.window_is_open = True
+
+            instance.gaze_preview(human_gaze, robot_gaze)
+
             key = cv2.waitKey(100) & 0xFF
-            # ENTER or SPACE is pressed
-            if key == 13 or key == 32:
-                robot_view_gaze = show_circle(instance.robot_img, robot_gaze, 20)
+            # SPACE is pressed
+            if key == 32:
+                instance.human_gaze.append(human_gaze)
+                instance.robot_gaze.append(robot_gaze)
+                print("Gaze point added")
+            # ENTER is pressed
+            elif key == 13:
+                robot_view_gaze = instance.robot_img.copy()
+                for gp in instance.robot_gaze:
+                    robot_view_gaze = show_circle(robot_view_gaze, gp, 20)
                 cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
 
-                msg = Float32MultiArray()
-                msg.data = robot_gaze
-                rospy.loginfo("(x,y) gaze coordinate: " + str(msg.data))
-                instance.robot_gaze = robot_gaze
+                # msg = Float32MultiArray()
+                # msg.data = robot_gaze
+                # rospy.loginfo("(x,y) gaze coordinate: " + str(msg.data))
                 # self.robot_gaze_pub.publish(msg)
                 cv2.destroyAllWindows()
+                break
             # q or Esc is pressed
             elif key == ord('q') or key == 27:
                 print("Abort.")
