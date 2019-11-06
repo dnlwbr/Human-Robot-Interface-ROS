@@ -2,7 +2,6 @@
 import cv2
 import numpy as np
 import rospy
-import socket
 import sys
 # Ros Messages (cv_bridge does not support CompressedImage in python)
 from sensor_msgs.msg import CompressedImage
@@ -10,15 +9,14 @@ from std_msgs.msg import Float32MultiArray
 
 from GazeMapper import GazeMapper
 from GazeMapper import show_circle
+from hri_udp_publisher.msg import Journal
 
 
 class InstanceHelper:
     def __init__(self):
         self.mapper = GazeMapper()
         self.window_is_open = False
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("localhost", 2002))
-        self.journal = None
+        self.journal = Journal()
         self.human_img = None
         self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback,
                                               queue_size=1, buff_size=2**20)
@@ -31,13 +29,7 @@ class InstanceHelper:
     def callback(self, ros_data):
         human_arr = np.fromstring(ros_data.data, np.uint8)
         self.human_img = cv2.imdecode(human_arr, cv2.IMREAD_COLOR)
-        self.read_journal()
-
-    def read_journal(self):
-        data, _ = self.sock.recvfrom(512)  # buffer size is 512
-        data = data.decode('UTF-8')
-        data = data.split("\t")
-        self.journal = data[:54]
+        self.journal = rospy.wait_for_message('hri_udp_publisher/gaze_journal', Journal)
 
     def gaze_preview(self, gp_human, gp_robot):
         field_preview = show_circle(self.human_img, gp_human, 20)
@@ -62,10 +54,9 @@ def main():
     rospy.sleep(0.5)
 
     while not rospy.is_shutdown():
-
         try:
-            x = int(round(float(instance.journal[2])))  # field.gaze.x
-            y = int(round(float(instance.journal[3])))  # field.gaze.y
+            x = int(round(float(instance.journal.data[2])))  # field.gaze.x
+            y = int(round(float(instance.journal.data[3])))  # field.gaze.y
         except ValueError:
             continue
 

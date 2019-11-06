@@ -1,1 +1,1 @@
-string[] journal
+string[] data
