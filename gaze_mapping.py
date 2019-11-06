@@ -80,7 +80,7 @@ def main():
             elif key == 8:
                 instance.robot_gaze = []
                 instance.human_gaze = []
-                print("All points deleted")
+                print("Reset selection")
             # ENTER is pressed
             elif key == 13:
                 robot_view_gaze = instance.robot_img.copy()

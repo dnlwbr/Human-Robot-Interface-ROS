@@ -57,10 +57,20 @@ def main(img, gazepoints, method, path='.'):
     # Get image height/width
     img_height, img_width = img.shape[:2]
 
+    # analyse and sort out region proposals
+    del_idx = []
+    for i, rect in enumerate(rects):
+        x, y, w, h = rect
+        if not all(x <= gp[0] <= x + w and y <= gp[1] <= y + h
+                   and w < img_width * ignore and h < img_height * ignore for gp in gazepoints):
+            del_idx.append(i)
+    rects_sorted = np.delete(rects, del_idx, axis=0)
+    rects = rects_sorted
+
     # number of region proposals to show
-    numShowRects = 100
+    num_show_rects = 3 if len(gazepoints) > 0 else 100
     # increment to increase/decrease total number reason proposals to be shown
-    increment = 50
+    increment = 1 if len(gazepoints) > 0 else 50
 
     # Marked box
     marked = 1
@@ -83,17 +93,15 @@ def main(img, gazepoints, method, path='.'):
 
         # iterate over all the region proposals
         for i, rect in enumerate(rects):
-            # draw rectangle for region proposal till numShowRects
-            if i < numShowRects:
+            # draw rectangle for region proposal till num_show_rects
+            if i < num_show_rects:
                 x, y, w, h = rect
-                if all(x <= gp[0] <= x + w and y <= gp[1] <= y + h
-                       and w < img_width*ignore and h < img_height*ignore for gp in gazepoints):
-                    if hide_unmarked is False:
-                        cv2.rectangle(img_preview, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
-                    found += 1
-                    if found == marked:
-                        marked_rect = rect
-                        marked_rect_exists = True
+                if hide_unmarked is False:
+                    cv2.rectangle(img_preview, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
+                found += 1
+                if found == marked:
+                    marked_rect = rect
+                    marked_rect_exists = True
             else:
                 break
 
@@ -105,7 +113,7 @@ def main(img, gazepoints, method, path='.'):
             cv2.rectangle(img_preview, (marked_rect[0], marked_rect[1]),
                           (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 3,
                           cv2.LINE_AA)
-            print(f"Marked region {marked}/{found}: {marked_rect}")
+            print(f"Marked region {marked}/{found}({len(rects)}): {marked_rect}")
 
         # show preview
         preview_scale = 1/4
@@ -145,11 +153,11 @@ def main(img, gazepoints, method, path='.'):
         # m is pressed
         elif key == ord('m'):
             # increase total number of rectangles to show by increment
-            numShowRects += increment
+            num_show_rects += increment
         # l is pressed
-        elif key == ord('l') and numShowRects > increment:
+        elif key == ord('l') and num_show_rects > increment:
             # decrease total number of rectangles to show by increment
-            numShowRects -= increment
+            num_show_rects -= increment
         # ENTER or SPACE is pressed
         elif key == 13 or key == 32:
             # Finish with current values
