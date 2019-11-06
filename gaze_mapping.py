@@ -33,15 +33,15 @@ class InstanceHelper:
 
     def gaze_preview(self, gp_human, gp_robot):
         field_preview = show_circle(self.human_img, gp_human, 20)
-        robot_preview = show_circle(self.robot_img, gp_robot, 20)
+        robot_preview = show_circle(self.robot_img, gp_robot, 30, thickness=10)
 
         for hgp in self.human_gaze:
             field_preview = show_circle(field_preview, hgp, 20)
         for rgp in self.robot_gaze:
-            robot_preview = show_circle(robot_preview, rgp, 20)
+            robot_preview = show_circle(robot_preview, rgp, 30, thickness=10)
 
-        field_preview = cv2.resize(field_preview, None, fx=0.4, fy=0.4)
-        robot_preview = cv2.resize(robot_preview, None, fx=0.5, fy=0.5)
+        field_preview = cv2.resize(field_preview, None, fx=0.5, fy=0.5)
+        robot_preview = cv2.resize(robot_preview, None, fx=0.2, fy=0.2)
         cv2.imshow("Field view", field_preview)
         cv2.imshow("Robot with human gaze", robot_preview)
         self.window_is_open = True
@@ -73,15 +73,24 @@ def main():
             key = cv2.waitKey(100) & 0xFF
             # SPACE is pressed
             if key == 32:
-                instance.human_gaze.append(human_gaze)
                 instance.robot_gaze.append(robot_gaze)
+                instance.human_gaze.append(human_gaze)
                 print("Gaze point added")
+            # BACKSPACE is pressed
+            elif key == 8:
+                instance.robot_gaze = []
+                instance.human_gaze = []
+                print("All points deleted")
             # ENTER is pressed
             elif key == 13:
                 robot_view_gaze = instance.robot_img.copy()
+                human_view_gaze = instance.human_img.copy()
                 for gp in instance.robot_gaze:
-                    robot_view_gaze = show_circle(robot_view_gaze, gp, 20)
+                    robot_view_gaze = show_circle(robot_view_gaze, gp, 40, thickness=10)
+                for gp in instance.human_gaze:
+                    human_view_gaze = show_circle(human_view_gaze, gp, 10)
                 cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
+                cv2.imwrite('human_gaze.jpg', human_view_gaze)
 
                 # msg = Float32MultiArray()
                 # msg.data = robot_gaze

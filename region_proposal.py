@@ -26,9 +26,6 @@ def main(img, gazepoints, method, path='.'):
     resize_scale = 0.25
     img_resized = cv2.resize(img, None, fx=resize_scale, fy=resize_scale)
 
-    # Get resized image height/width
-    img_resized_height, img_resized_width = img_resized.shape[:2]
-
     # create Selective Search Segmentation Object using default parameters
     ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
 
@@ -53,6 +50,13 @@ def main(img, gazepoints, method, path='.'):
     # run selective search segmentation on input image
     rects = ss.process()
 
+    # rescale rects
+    rects = np.around(rects / resize_scale)
+    rects = rects.astype(int)
+
+    # Get image height/width
+    img_height, img_width = img.shape[:2]
+
     # number of region proposals to show
     numShowRects = 100
     # increment to increase/decrease total number reason proposals to be shown
@@ -70,7 +74,7 @@ def main(img, gazepoints, method, path='.'):
         found = 0
 
         # create a copies of original image
-        img_preview = img_resized.copy()
+        img_preview = img.copy()
         img_out = img.copy()
 
         # check if marked region exists in order to display it on top level
@@ -82,10 +86,10 @@ def main(img, gazepoints, method, path='.'):
             # draw rectangle for region proposal till numShowRects
             if i < numShowRects:
                 x, y, w, h = rect
-                if all(x <= gp[0]*resize_scale <= x + w and y <= gp[1]*resize_scale <= y + h
-                       and w < img_resized_width*ignore and h < img_resized_height*ignore for gp in gazepoints):
+                if all(x <= gp[0] <= x + w and y <= gp[1] <= y + h
+                       and w < img_width*ignore and h < img_height*ignore for gp in gazepoints):
                     if hide_unmarked is False:
-                        cv2.rectangle(img_preview, (x, y), (x + w, y + h), (0, 255, 0), 1, cv2.LINE_AA)
+                        cv2.rectangle(img_preview, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
                     found += 1
                     if found == marked:
                         marked_rect = rect
@@ -95,26 +99,27 @@ def main(img, gazepoints, method, path='.'):
 
         if hide_gp is False:
             for gp in gazepoints:
-                img_preview = show_circle(img_preview, gp*resize_scale, 7, thickness=2)
+                img_preview = show_circle(img_preview, gp, 40, thickness=10)
 
         if marked_rect_exists is True:
             cv2.rectangle(img_preview, (marked_rect[0], marked_rect[1]),
-                          (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 1,
+                          (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 3,
                           cv2.LINE_AA)
-            marked_rect = np.around(marked_rect / resize_scale)
-            marked_rect = marked_rect.astype(int)
             print(f"Marked region {marked}/{found}: {marked_rect}")
 
         # show preview
-        img_preview = cv2.resize(img_preview, None, fx=1/(2*resize_scale), fy=1/(2*resize_scale))
+        preview_scale = 1/4
+        img_preview = cv2.resize(img_preview, None, fx=preview_scale, fy=preview_scale)
         cv2.imshow("Region proposal", img_preview)
 
         # save image with chosen box
-        for gp in gazepoints:
-            img_out = show_circle(img_out, gp, 20)
-        cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]),
-                      (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]), (255, 0, 0), 2, cv2.LINE_AA)
-        cv2.imwrite(path + '/robot_gaze_box.jpg', img_out)
+        if marked_rect_exists is True:
+            for gp in gazepoints:
+                img_out = show_circle(img_out, gp, 40, thickness=10)
+            cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]),
+                          (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]),
+                          (255, 0, 0), 3, cv2.LINE_AA)
+            cv2.imwrite(path + '/robot_gaze_box.jpg', img_out)
 
         # record key press
         key = cv2.waitKey(0) & 0xFF
