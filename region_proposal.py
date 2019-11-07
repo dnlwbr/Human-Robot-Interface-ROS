@@ -20,7 +20,7 @@ def main(img, gazepoints, method, path='.'):
     # cv2.setNumThreads(4)
 
     # Ignore boxes bigger than 70% of the height/width
-    ignore = 0.7
+    ignore = 0.5
 
     # create resized copy of image
     resize_scale = 0.25
@@ -70,7 +70,7 @@ def main(img, gazepoints, method, path='.'):
     # number of region proposals to show
     num_show_rects = 3 if len(gazepoints) > 0 else 100
     # increment to increase/decrease total number reason proposals to be shown
-    increment = 1 if len(gazepoints) > 0 else 50
+    increment = 3 if len(gazepoints) > 0 else 50
 
     # Marked box
     marked = 1
@@ -116,8 +116,7 @@ def main(img, gazepoints, method, path='.'):
             print(f"Marked region {marked}/{found}({len(rects)}): {marked_rect}")
 
         # show preview
-        preview_scale = 1/4
-        img_preview = cv2.resize(img_preview, None, fx=preview_scale, fy=preview_scale)
+        cv2.namedWindow('Region proposal', cv2.WINDOW_GUI_EXPANDED)
         cv2.imshow("Region proposal", img_preview)
 
         # save image with chosen box

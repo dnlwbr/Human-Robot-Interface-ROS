@@ -33,16 +33,29 @@ class InstanceHelper:
 
     def gaze_preview(self, gp_human, gp_robot):
         field_preview = show_circle(self.human_img, gp_human, 20)
-        robot_preview = show_circle(self.robot_img, gp_robot, 30, thickness=10)
+        robot_preview = show_circle(self.robot_img, gp_robot, 40, thickness=10)
 
-        for hgp in self.human_gaze:
-            field_preview = show_circle(field_preview, hgp, 20)
+        font = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = 1
+        margin = 10
+        thickness = 1
+        text = f"Selected points: {len(self.human_gaze)}"
+        textsize = cv2.getTextSize(text, font, font_scale, thickness)
+        text_width = textsize[0][0]
+        text_height = textsize[0][1]
+        line_height = text_height + textsize[1] + margin
+
+        x = self.human_img.shape[1] - margin - text_width
+        y = margin + text_height + 0 * line_height
+
+        cv2.putText(field_preview, text, (x, y), font, font_scale, (0, 255, 0), thickness)
+
         for rgp in self.robot_gaze:
-            robot_preview = show_circle(robot_preview, rgp, 30, thickness=10)
+            robot_preview = show_circle(robot_preview, rgp, 40, thickness=10)
 
-        field_preview = cv2.resize(field_preview, None, fx=0.5, fy=0.5)
-        robot_preview = cv2.resize(robot_preview, None, fx=0.2, fy=0.2)
+        cv2.namedWindow('Field view', cv2.WINDOW_GUI_EXPANDED)
         cv2.imshow("Field view", field_preview)
+        cv2.namedWindow('Robot with human gaze', cv2.WINDOW_GUI_EXPANDED)
         cv2.imshow("Robot with human gaze", robot_preview)
         self.window_is_open = True
 
@@ -83,14 +96,14 @@ def main():
                 print("Reset selection")
             # ENTER is pressed
             elif key == 13:
+                for i, gp in enumerate(instance.human_gaze):
+                    human_view_gaze = instance.human_img.copy()
+                    human_view_gaze = show_circle(human_view_gaze, gp, 10)
+                    cv2.imwrite(f'human_gaze{i}.jpg', human_view_gaze)
                 robot_view_gaze = instance.robot_img.copy()
-                human_view_gaze = instance.human_img.copy()
                 for gp in instance.robot_gaze:
                     robot_view_gaze = show_circle(robot_view_gaze, gp, 40, thickness=10)
-                for gp in instance.human_gaze:
-                    human_view_gaze = show_circle(human_view_gaze, gp, 10)
                 cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
-                cv2.imwrite('human_gaze.jpg', human_view_gaze)
 
                 # msg = Float32MultiArray()
                 # msg.data = robot_gaze
