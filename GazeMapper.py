@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 
 
-def show_circle(img, gp, radius, thickness=5):
+def show_circle(img, gp, radius, color=(0, 255, 0), thickness=5):
     tmp = img.copy()
-    cv2.circle(tmp, (gp[0], gp[1]), radius, (0, 255, 0), thickness)
+    cv2.circle(tmp, (gp[0], gp[1]), radius, color, thickness)
     return tmp
 
 
@@ -75,4 +75,4 @@ class GazeMapper:
                 src = np.float32([[[gazepoint[0], gazepoint[1]]]])
                 dst = cv2.perspectiveTransform(src, H)
 
-                return src[0][0], dst[0][0]
+                return dst[0][0]
