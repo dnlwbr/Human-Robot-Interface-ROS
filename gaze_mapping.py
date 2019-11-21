@@ -105,8 +105,15 @@ def main():
         instance.gaze_preview(human_gaze, robot_gaze)
 
         key = cv2.waitKey(100) & 0xFF
-        # SPACE is pressed
-        if key == 32 and robot_gaze is not None:
+        # PRESENTER1 is pressed
+        if key == 86:
+            # Freeze preview
+            while True:
+                key = cv2.waitKey(100) & 0xFF
+                if key == 86:
+                    break
+        # SPACE or PRESENTER2 is pressed
+        elif (key == 32 or key == 85) and robot_gaze is not None:
             instance.robot_gaze.append(robot_gaze)
             instance.human_gaze.append(human_gaze)
             instance.human_gaze_imgs.append(instance.human_img)
