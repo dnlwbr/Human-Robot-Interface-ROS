@@ -110,7 +110,7 @@ def main():
             instance.robot_gaze.append(robot_gaze)
             instance.human_gaze.append(human_gaze)
             instance.human_gaze_imgs.append(instance.human_img)
-            print("Gaze point added")
+            print(f"Gaze point added: {human_gaze}")
         # BACKSPACE is pressed
         elif key == 8:
             instance.robot_gaze = []
@@ -121,7 +121,7 @@ def main():
         elif key == 13:
             for i, gp in enumerate(instance.human_gaze):
                 human_view_gaze = instance.human_gaze_imgs[i]
-                human_view_gaze = show_circle(human_view_gaze, gp, 10, thickness=3)
+                human_view_gaze = show_circle(human_view_gaze, gp, 20, thickness=3)
                 cv2.imwrite(f'human_gaze{i}.jpg', human_view_gaze)
             robot_view_gaze = instance.robot_img.copy()
             for gp in instance.robot_gaze:

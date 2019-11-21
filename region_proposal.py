@@ -6,7 +6,6 @@ Usage:
 Use "l" to display less rects, 'm' to display more rects, "q" to quit.
 """
 
-import argparse
 import cv2
 import numpy as np
 import sys
@@ -82,9 +81,12 @@ def main(img, method, gazepoints=None, path='.'):
     hide_unmarked = False
     hide_gp = False
 
+    # Print Info only if something changed
+    action_toggle = True
+
     while True:
-        # Initialise number of found boxes
-        found = 0
+        # Initialise counter for drawn boxes
+        drawn = 0
 
         # create a copies of original image
         img_out = img.copy()
@@ -105,15 +107,16 @@ def main(img, method, gazepoints=None, path='.'):
                 x, y, w, h = rect
                 if hide_unmarked is False:
                     cv2.rectangle(img_out, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
-                found += 1
-                if found == marked:
+                drawn += 1
+                if drawn == marked:
                     marked_rect = np.array([x, y, x + w, y + h])
                     marked_rect_exists = True
             else:
                 break
 
         if marked_rect_exists is True:
-            print(f"Marked region {marked}/{found}({len(rects)}): {marked_rect}")
+            if action_toggle:
+                print(f"Marked region {marked}/{num_show_rects}({len(rects)}): {marked_rect}")
             cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]), (marked_rect[2], marked_rect[3]),
                           (255, 0, 0), 3, cv2.LINE_AA)
 
@@ -133,23 +136,25 @@ def main(img, method, gazepoints=None, path='.'):
             # hide/unhide unmarked boxes
             hide_unmarked = not hide_unmarked
         # b is pressed
-        elif key == ord('b'):
+        elif key == ord('b') and marked > 1:
             # mark previous box
-            if marked > 1:
-                marked -= 1
+            marked -= 1
+            action_toggle = True
         # n is pressed
-        elif key == ord('n'):
+        elif key == ord('n') and marked < drawn:
             # mark next box
-            if marked < found:
-                marked += 1
+            marked += 1
+            action_toggle = True
         # m is pressed
-        elif key == ord('m'):
+        elif key == ord('m') and num_show_rects < len(rects):
             # increase total number of rectangles to show by increment
             num_show_rects += increment
+            action_toggle = True
         # l is pressed
-        elif key == ord('l') and num_show_rects > increment:
+        elif key == ord('l') and num_show_rects > marked:
             # decrease total number of rectangles to show by increment
             num_show_rects -= increment
+            action_toggle = True
         # ENTER or SPACE is pressed
         elif key == 13 or key == 32:
             # save image
@@ -161,6 +166,8 @@ def main(img, method, gazepoints=None, path='.'):
         elif key == ord('q') or key == 27:
             print("Abort.")
             sys.exit(0)
+        else:
+            action_toggle = False
 
     # close image show window
     cv2.destroyAllWindows()
