@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import sys
 
-from GazeMapper import show_circle
+from gaze_mapping import show_circle
 
 
 def main(img, method, gazepoints=None, path='.'):
@@ -22,8 +22,8 @@ def main(img, method, gazepoints=None, path='.'):
     if gazepoints is None:
         gazepoints = []
 
-    # Ignore boxes bigger than 70% of the height/width
-    ignore = 0.5
+    # Ignore boxes bigger than 50% of the height/width
+    ignore = 1
 
     # create resized copy of image
     resize_scale = 0.25
@@ -107,15 +107,14 @@ def main(img, method, gazepoints=None, path='.'):
                     cv2.rectangle(img_out, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
                 found += 1
                 if found == marked:
-                    marked_rect = rect
+                    marked_rect = np.array([x, y, x + w, y + h])
                     marked_rect_exists = True
             else:
                 break
 
         if marked_rect_exists is True:
             print(f"Marked region {marked}/{found}({len(rects)}): {marked_rect}")
-            cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]),
-                          (marked_rect[0] + marked_rect[2], marked_rect[1] + marked_rect[3]),
+            cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]), (marked_rect[2], marked_rect[3]),
                           (255, 0, 0), 3, cv2.LINE_AA)
 
         # show preview

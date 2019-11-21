@@ -8,8 +8,13 @@ from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32MultiArray
 
 from GazeMapper import GazeMapper
-from GazeMapper import show_circle
 from hri_udp_publisher.msg import Journal
+
+
+def show_circle(img, gp, radius, color=(0, 255, 0), thickness=5):
+    tmp = img.copy()
+    cv2.circle(tmp, (gp[0], gp[1]), radius, color, thickness)
+    return tmp
 
 
 class InstanceHelper:
@@ -22,8 +27,9 @@ class InstanceHelper:
         rospy.loginfo("subscribed to /EyeRecTooImage/compressed")
         self.robot_img = cv2.imread('robot.jpg', cv2.IMREAD_ANYCOLOR)
         # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
-        self.human_gaze = []
         self.robot_gaze = []
+        self.human_gaze = []
+        self.human_gaze_imgs = []
 
     def callback(self, ros_data):
         human_arr = np.fromstring(ros_data.data, np.uint8)
@@ -53,13 +59,13 @@ class InstanceHelper:
         x = self.human_img.shape[1] - margin - text_width
         y = margin + text_height + 0 * line_height
 
-        cv2.putText(field_preview, text, (x, y), font, font_scale, color, thickness)
+        # cv2.putText(field_preview, text, (x, y), font, font_scale, color, thickness)
 
         if self.mapper.img_ids is None:
             warning = "No markers detected"
             warning_width = (cv2.getTextSize(warning, font, font_scale, thickness))[0][0]
             x = self.human_img.shape[1] - margin - warning_width
-            y = margin + text_height + 1 * line_height
+            y = margin + text_height + 0 * line_height
             color = (0, 0, 255)
             cv2.putText(field_preview, warning, (x, y), font, font_scale, color, thickness)
 
@@ -103,17 +109,19 @@ def main():
         if key == 32 and robot_gaze is not None:
             instance.robot_gaze.append(robot_gaze)
             instance.human_gaze.append(human_gaze)
+            instance.human_gaze_imgs.append(instance.human_img)
             print("Gaze point added")
         # BACKSPACE is pressed
         elif key == 8:
             instance.robot_gaze = []
             instance.human_gaze = []
+            instance.human_gaze_imgs = []
             print("Reset selection")
         # ENTER is pressed
         elif key == 13:
             for i, gp in enumerate(instance.human_gaze):
-                human_view_gaze = instance.human_img.copy()
-                human_view_gaze = show_circle(human_view_gaze, gp, 10)
+                human_view_gaze = instance.human_gaze_imgs[i]
+                human_view_gaze = show_circle(human_view_gaze, gp, 10, thickness=3)
                 cv2.imwrite(f'human_gaze{i}.jpg', human_view_gaze)
             robot_view_gaze = instance.robot_img.copy()
             for gp in instance.robot_gaze:

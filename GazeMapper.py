@@ -2,12 +2,6 @@ import cv2
 import numpy as np
 
 
-def show_circle(img, gp, radius, color=(0, 255, 0), thickness=5):
-    tmp = img.copy()
-    cv2.circle(tmp, (gp[0], gp[1]), radius, color, thickness)
-    return tmp
-
-
 class GazeMapper:
     def __init__(self):
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
