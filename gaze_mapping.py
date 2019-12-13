@@ -104,7 +104,7 @@ def main():
 
         instance.gaze_preview(human_gaze, robot_gaze)
 
-        key = cv2.waitKey(100) & 0xFF
+        key = cv2.waitKey(2) & 0xFF
         # PRESENTER1 is pressed
         if key == 86:
             # Freeze preview
@@ -117,7 +117,9 @@ def main():
             instance.robot_gaze.append(robot_gaze)
             instance.human_gaze.append(human_gaze)
             instance.human_gaze_imgs.append(instance.human_img)
-            print(f"Gaze point added: {human_gaze}")
+            print("Gaze point added:")
+            print(f"\tHuman: {human_gaze}")
+            print(f"\tRobot: {robot_gaze}")
         # BACKSPACE is pressed
         elif key == 8:
             instance.robot_gaze = []

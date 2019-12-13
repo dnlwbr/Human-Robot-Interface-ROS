@@ -21,7 +21,7 @@ def main(img, method, gazepoints=None, path='.'):
     if gazepoints is None:
         gazepoints = []
 
-    # Ignore boxes bigger than 50% of the height/width
+    # Ignore boxes bigger than (value*100)% of the height/width
     ignore = 1
 
     # create resized copy of image
@@ -69,6 +69,18 @@ def main(img, method, gazepoints=None, path='.'):
     rects_sorted = np.delete(rects, del_idx, axis=0)
     rects = rects_sorted
 
+    ################################
+    # # Save proposals if necessary
+    # import pickle
+    # file = open('rects.pkl', 'wb')
+    # pickle.dump(rects, file)
+    # file.close()
+    # # Load proposals if necessary
+    # import pickle
+    # file = open('rects.pkl', 'rb')
+    # rects = pickle.load(file)
+    ################################
+
     # number of region proposals to show
     num_show_rects = 1 if len(gazepoints) > 0 else 100
     # increment to increase/decrease total number reason proposals to be shown
@@ -106,7 +118,7 @@ def main(img, method, gazepoints=None, path='.'):
             if i < num_show_rects:
                 x, y, w, h = rect
                 if hide_unmarked is False:
-                    cv2.rectangle(img_out, (x, y), (x + w, y + h), (0, 255, 0), 3, cv2.LINE_AA)
+                    cv2.rectangle(img_out, (x, y), (x + w, y + h), (0, 255, 0), 2, cv2.LINE_AA)
                 drawn += 1
                 if drawn == marked:
                     marked_rect = np.array([x, y, x + w, y + h])
@@ -118,7 +130,7 @@ def main(img, method, gazepoints=None, path='.'):
             if action_toggle:
                 print(f"Marked region {marked}/{num_show_rects}({len(rects)}): {marked_rect}")
             cv2.rectangle(img_out, (marked_rect[0], marked_rect[1]), (marked_rect[2], marked_rect[3]),
-                          (255, 0, 0), 3, cv2.LINE_AA)
+                          (255, 0, 0), 2, cv2.LINE_AA)
 
         # show preview
         cv2.namedWindow('Region proposal', cv2.WINDOW_GUI_EXPANDED)
