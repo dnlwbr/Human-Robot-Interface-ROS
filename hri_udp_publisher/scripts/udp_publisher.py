@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import rospy
 import socket
-from multiprocessing import Process, Queue
 from hri_udp_publisher.msg import Journal
 
 
@@ -25,21 +24,14 @@ class UDPParser:
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp_socket.bind((self.ip, self.port))
-        rospy.loginfo(f"UDP socket bounded to {self.ip}:{self.port}")
-
-        # Process initialization
+        rospy.loginfo(f"UDP socket bound to {self.ip}:{self.port}")
         rospy.loginfo('Waiting for header...')
-        self.queue = Queue()
-        self.process = Process(target=self.parse_stream)
-        self.process.start()
 
     def __del__(self):
-        # close the socket and terminate the reading process
-        rospy.loginfo(f"Close UDP socket")
+        # close the socket
+        rospy.loginfo(f"Stop streaming")
         self.udp_socket.close()
-        rospy.loginfo(f"Terminate process")
-        self.process.terminate()
-        rospy.sleep(2)
+        rospy.loginfo(f"UDP socket closed")
 
     def parse_line(self, line):
         if len(line) < 1:
@@ -49,7 +41,7 @@ class UDPParser:
         if not self.header:
             if line[0] == 'H':
                 self.header = line[1:].split(self.sep)
-                rospy.loginfo('Header found.')
+                rospy.loginfo('Header found')
                 rospy.loginfo('Start streaming...')
         else:
             if line[0] == 'J':
@@ -57,37 +49,40 @@ class UDPParser:
                 # remove the empty field from the tab at the end of the line if necessary
                 if '' in d.keys():
                     del d['']
-                self.queue.put(d)
+                self.journal.keys = d.keys()
+                self.journal.values = d.values()
+                # dict.keys together dict.values possibly not threadsafe (dict may change in between calls).
+                # self.journal.keys, self.journal.values = zip(*self.queue.get().items())
 
     def parse_stream(self):
-        udp_buffer_size = 4096
-        stream_buffer = ''
+        udp_buffer_size = 1024
 
-        # Stream parsing
-        while True:
-            # accumulate data
-            data, _ = self.udp_socket.recvfrom(udp_buffer_size)
-            stream_buffer += data.decode('utf-8')
+        # read data
+        data_stream, _ = self.udp_socket.recvfrom(udp_buffer_size)
+        data_stream = data_stream.decode('utf-8')
 
-            # now divide it in lines
-            lines = stream_buffer.splitlines()
+        # divide it in lines
+        lines = data_stream.splitlines()
 
-            # if the stream doesn't end with a new line, it means we have received just
-            # part of the last data point: Put the content back on the buffer.
-            last_line_is_complete = stream_buffer.endswith('\n')
-            if not last_line_is_complete:
-                stream_buffer = lines.pop()
+        # if the stream doesn't end with a new line, then last line is not complete
+        last_line_is_complete = data_stream.endswith('\n')
 
-            for line in lines:
-                self.parse_line(line)
+        # delete incomplete line
+        if not last_line_is_complete:
+            lines.pop()
+
+        # Parse last (most recent) line
+        self.parse_line(lines[-1])
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        # dict.keys together dict.values possibly not threadsafe (dict may change in between calls)! Therefore:
-        self.journal.keys, self.journal.values = zip(*self.queue.get().items())
-        return self.journal
+        self.parse_stream()
+        if self.header is None:
+            return False, self.journal
+        else:
+            return True, self.journal
 
 
 def main():
@@ -98,12 +93,10 @@ def main():
 
     udp_parser = UDPParser()
 
-    # try:
     while not rospy.is_shutdown():
-        journal = next(udp_parser)
-        pub.publish(journal)
-    # except rospy.ROSInterruptException:
-    #     del udp_parser
+        ret, journal = next(udp_parser)
+        if ret is True:
+            pub.publish(journal)
 
 
 if __name__ == '__main__':

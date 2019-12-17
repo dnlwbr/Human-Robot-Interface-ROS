@@ -89,20 +89,14 @@ def main():
     rospy.sleep(0.5)
 
     while not rospy.is_shutdown():
-        try:
-            x = int(round(float(instance.journal_dict["field.gaze.x"])))
-            y = int(round(float(instance.journal_dict["field.gaze.y"])))
-            human_gaze = np.float32([x, y])
-        except ValueError:
-            continue
+        x = int(round(float(instance.journal_dict["field.gaze.x"])))
+        y = int(round(float(instance.journal_dict["field.gaze.y"])))
+        human_gaze = np.float32([x, y])
 
         ret = instance.mapper.update(instance.human_img, instance.robot_img)
 
         if ret:
-            try:
-                robot_gaze = instance.mapper.map(human_gaze)
-            except TypeError:
-                continue
+            robot_gaze = instance.mapper.map(human_gaze)
         else:
             robot_gaze = None
 
