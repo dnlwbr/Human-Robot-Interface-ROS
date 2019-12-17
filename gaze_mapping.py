@@ -21,6 +21,7 @@ class InstanceHelper:
     def __init__(self):
         self.mapper = GazeMapper()
         self.journal = Journal()
+        self.journal_dict = dict()
         self.human_img = None
         self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback,
                                               queue_size=1, buff_size=2**20)
@@ -35,6 +36,9 @@ class InstanceHelper:
         human_arr = np.fromstring(ros_data.data, np.uint8)
         self.human_img = cv2.imdecode(human_arr, cv2.IMREAD_COLOR)
         self.journal = rospy.wait_for_message('hri_udp_publisher/gaze_journal', Journal)
+        keys = self.journal.keys
+        values = self.journal.values
+        self.journal_dict = dict(zip(keys, values))
 
     def gaze_preview(self, gp_human, gp_robot=None):
         if gp_robot is None:
@@ -86,8 +90,8 @@ def main():
 
     while not rospy.is_shutdown():
         try:
-            x = int(round(float(instance.journal.data[2])))  # field.gaze.x
-            y = int(round(float(instance.journal.data[3])))  # field.gaze.y
+            x = int(round(float(instance.journal_dict["field.gaze.x"])))
+            y = int(round(float(instance.journal_dict["field.gaze.y"])))
             human_gaze = np.float32([x, y])
         except ValueError:
             continue
