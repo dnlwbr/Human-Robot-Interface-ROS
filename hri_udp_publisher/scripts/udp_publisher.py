@@ -49,6 +49,7 @@ class UDPParser:
                 # remove the empty field from the tab at the end of the line if necessary
                 if '' in d.keys():
                     del d['']
+                self.journal.header.stamp = rospy.Time.now()
                 self.journal.keys = d.keys()
                 self.journal.values = d.values()
                 # dict.keys together dict.values possibly not threadsafe (dict may change in between calls).
