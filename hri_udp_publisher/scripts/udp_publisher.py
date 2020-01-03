@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import select
 import rospy
 import socket
 from hri_udp_publisher.msg import Journal
@@ -22,14 +23,13 @@ class UDPParser:
 
         # UDP socket
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp_socket.bind((self.ip, self.port))
         rospy.loginfo(f"UDP socket bound to {self.ip}:{self.port}")
         rospy.loginfo('Waiting for header...')
 
     def __del__(self):
         # close the socket
-        rospy.loginfo(f"Stop streaming")
+        rospy.loginfo(f"Stop parsing")
         self.udp_socket.close()
         rospy.loginfo(f"UDP socket closed")
 
@@ -57,6 +57,18 @@ class UDPParser:
 
     def parse_stream(self):
         udp_buffer_size = 1024
+
+        # Check for half a second whether UDP data is received
+        ready, _, _ = select.select([self.udp_socket], [], [], 0.5)
+
+        # Return if no data is received
+        if self.udp_socket not in ready:
+            if self.header is not None:
+                rospy.logwarn('No data received')
+                rospy.loginfo('Stop streaming')
+                rospy.loginfo('Waiting for header...')
+                self.header = None
+            return
 
         # read data
         data_stream, _ = self.udp_socket.recvfrom(udp_buffer_size)
