@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 import cv2
+import message_filters
 import numpy as np
 import rospy
 import sys
-# Ros Messages (cv_bridge does not support CompressedImage in python)
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Float32MultiArray
 
@@ -22,19 +22,30 @@ class InstanceHelper:
         self.mapper = GazeMapper()
         self.journal = Journal()
         self.journal_dict = dict()
-        self.human_img = None
-        self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback,
-                                              queue_size=1, buff_size=2**20)
-        rospy.loginfo("subscribed to /EyeRecTooImage/compressed")
-        self.robot_img = cv2.imread('robot.jpg', cv2.IMREAD_ANYCOLOR)
-        # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
         self.robot_gaze = []
         self.human_gaze = []
         self.human_gaze_imgs = []
+        self.human_img = None
+        self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback_human,
+                                              queue_size=1, buff_size=2 ** 20)
+        rospy.loginfo("Subscribed to /EyeRecTooImage/compressed")
+        self.robot_img = None
+        self.robot_img_sub = rospy.Subscriber("/kinect2/hd/image_color/compressed", CompressedImage, self.callback,
+                                              queue_size=1, buff_size=2 ** 20)
+        rospy.loginfo("Subscribed to /kinect2/hd/image_color/compressed")
 
-    def callback(self, ros_data):
-        human_arr = np.fromstring(ros_data.data, np.uint8)
+        # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
+
+    def callback_human(self, human_img):
+        human_arr = np.fromstring(human_img.data, np.uint8)
         self.human_img = cv2.imdecode(human_arr, cv2.IMREAD_COLOR)
+        # human_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+
+    def callback(self, robot_img):
+        robot_arr = np.fromstring(robot_img.data, np.uint8)
+        self.robot_img = cv2.imdecode(robot_arr, cv2.IMREAD_COLOR)
+        # robot_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+
         self.journal = rospy.wait_for_message('hri_udp_publisher/gaze_journal', Journal)
         keys = self.journal.keys
         values = self.journal.values
@@ -65,15 +76,22 @@ class InstanceHelper:
 
         # cv2.putText(field_preview, text, (x, y), font, font_scale, color, thickness)
 
-        if self.mapper.img_ids is None:
+        # Print warnings
+        if self.mapper.img_ids is None or self.mapper.ref_ids is None:
             warning = "No markers detected"
             warning_width = (cv2.getTextSize(warning, font, font_scale, thickness))[0][0]
-            x = self.human_img.shape[1] - margin - warning_width
-            y = margin + text_height + 0 * line_height
             color = (0, 0, 255)
-            cv2.putText(field_preview, warning, (x, y), font, font_scale, color, thickness)
+            if self.mapper.img_ids is None:
+                x = self.human_img.shape[1] - margin - warning_width
+                y = margin + text_height + 0 * line_height
+                cv2.putText(field_preview, warning, (x, y), font, font_scale, color, thickness)
+            if self.mapper.ref_ids is None:
+                x = self.robot_img.shape[1] - margin - warning_width
+                y = margin + text_height + 0 * line_height
+                cv2.putText(robot_preview, warning, (x, y), font, font_scale, color, thickness)
 
         for rgp in self.robot_gaze:
+            # TODO: Problem if Robot moves after gaze point is set
             robot_preview = show_circle(robot_preview, rgp, 40, thickness=10)
 
         cv2.namedWindow('Field view', cv2.WINDOW_GUI_EXPANDED)
@@ -86,7 +104,7 @@ def main():
     rospy.init_node('hri_gaze_mapping', disable_signals=True)
     instance = InstanceHelper()
 
-    rospy.sleep(0.5)
+    rospy.sleep(1.5)
 
     while not rospy.is_shutdown():
         x = int(round(float(instance.journal_dict["field.gaze.x"])))
@@ -147,8 +165,8 @@ def main():
 
     cv2.destroyAllWindows()
 
+    rospy.loginfo("Shutting down ROS hri_gaze_mapping module")
     rospy.signal_shutdown("Gaze mapping finished")
-    print("Shutting down ROS hri_gaze_mapping module")
 
     return instance.robot_gaze
 
