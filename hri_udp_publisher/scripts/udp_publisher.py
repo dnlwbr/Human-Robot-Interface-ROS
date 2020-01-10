@@ -102,7 +102,7 @@ def main():
     rospy.init_node('udp_publisher')
     topic = 'hri_udp_publisher/gaze_journal'
     pub = rospy.Publisher(topic, Journal, queue_size=1)
-    rospy.loginfo(f"Publishing on {topic}")
+    rospy.loginfo(f"Publishing to {topic}")
 
     udp_parser = UDPParser()
 

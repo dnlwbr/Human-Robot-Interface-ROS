@@ -14,22 +14,23 @@ class GazeMapper:
         self.ref_dimensions, self.img_dimensions = None, None
 
     def update(self, img, ref_img):
-        self.ref = ref_img
         self.img = img
-        self.ref_dimensions = self.ref.shape
+        self.ref = ref_img
         self.img_dimensions = self.img.shape
-        self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
+        self.ref_dimensions = self.ref.shape
         self.img_corners, self.img_ids, _ = self.detect(self.img)
-
-        if np.all(self.ref_ids) is not None:
-            self.ref_ids = self.ref_ids.flatten()
-            self.ref_corners = np.asarray(self.ref_corners).reshape(4*len(self.ref_ids), 2)
+        self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
 
         if np.all(self.img_ids) is not None:
             self.img_ids = self.img_ids.flatten()
             self.img_corners = np.asarray(self.img_corners).reshape(4 * len(self.img_ids), 2)
 
-        if np.all(self.ref_ids) is not None and np.all(self.img_ids) is not None:
+        if np.all(self.ref_ids) is not None:
+            self.ref_ids = self.ref_ids.flatten()
+            self.ref_corners = np.asarray(self.ref_corners).reshape(4*len(self.ref_ids), 2)
+
+        if np.all(self.img_ids) is not None and np.all(self.ref_ids) is not None and len(
+                np.intersect1d(self.img_ids, self.ref_ids)) > 1:
             return True
         else:
             return False

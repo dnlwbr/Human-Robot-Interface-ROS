@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 import cv2
-import message_filters
 import numpy as np
 import rospy
 import sys
+from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import Float32MultiArray
 
 from GazeMapper import GazeMapper
+from hri_gaze_mapping.msg import Gaze
 from hri_udp_publisher.msg import Journal
 
 
@@ -19,6 +19,7 @@ def show_circle(img, gp, radius, color=(0, 255, 0), thickness=5):
 
 class InstanceHelper:
     def __init__(self):
+        self.bridge = CvBridge()
         self.mapper = GazeMapper()
         self.journal = Journal()
         self.journal_dict = dict()
@@ -33,18 +34,20 @@ class InstanceHelper:
         self.robot_img_sub = rospy.Subscriber("/kinect2/hd/image_color/compressed", CompressedImage, self.callback,
                                               queue_size=1, buff_size=2 ** 20)
         rospy.loginfo("Subscribed to /kinect2/hd/image_color/compressed")
-
-        # self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
+        self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Gaze, queue_size=1)
+        rospy.loginfo("Publishing robot gaze to /hri_gaze_mapping/robot_gaze")
 
     def callback_human(self, human_img):
-        human_arr = np.fromstring(human_img.data, np.uint8)
-        self.human_img = cv2.imdecode(human_arr, cv2.IMREAD_COLOR)
-        # human_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+        try:
+            self.human_img = self.bridge.compressed_imgmsg_to_cv2(human_img, desired_encoding="passthrough")
+        except CvBridgeError as e:
+            print(e)
 
     def callback(self, robot_img):
-        robot_arr = np.fromstring(robot_img.data, np.uint8)
-        self.robot_img = cv2.imdecode(robot_arr, cv2.IMREAD_COLOR)
-        # robot_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+        try:
+            self.robot_img = self.bridge.compressed_imgmsg_to_cv2(robot_img, desired_encoding="passthrough")
+        except CvBridgeError as e:
+            print(e)
 
         self.journal = rospy.wait_for_message('hri_udp_publisher/gaze_journal', Journal)
         keys = self.journal.keys
@@ -103,8 +106,11 @@ class InstanceHelper:
 def main():
     rospy.init_node('hri_gaze_mapping', disable_signals=True)
     instance = InstanceHelper()
+    robot_gaze_msg = Gaze()
 
     rospy.sleep(1.5)
+
+    assert instance.journal_dict != {}, "Gaze is published?"
 
     while not rospy.is_shutdown():
         x = int(round(float(instance.journal_dict["field.gaze.x"])))
@@ -115,6 +121,8 @@ def main():
 
         if ret:
             robot_gaze = instance.mapper.map(human_gaze)
+            robot_gaze_msg.x, robot_gaze_msg.y = robot_gaze
+            instance.robot_gaze_pub.publish(robot_gaze_msg)
         else:
             robot_gaze = None
 
@@ -152,11 +160,6 @@ def main():
             for gp in instance.robot_gaze:
                 robot_view_gaze = show_circle(robot_view_gaze, gp, 40, thickness=10)
             cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
-
-            # msg = Float32MultiArray()
-            # msg.data = robot_gaze
-            # rospy.loginfo("(x,y) gaze coordinate: " + str(msg.data))
-            # self.robot_gaze_pub.publish(msg)
             break
         # q or Esc is pressed
         elif key == ord('q') or key == 27:
