@@ -1,39 +1,19 @@
-#!/usr/bin/env python
-
-import rospy
+import argparse
 import cv2
+import time
+import imutils
+from imutils.video import VideoStream
 from imutils.video import FPS
-from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
-from cv_bridge import CvBridge
 
 
-class InstanceHelper:
-    def __init__(self):
-        self.bridge = CvBridge()
-        self.robot_image_sub = rospy.Subscriber("/kinect2/sd/image_color_rect", Image, self.callback)
-        self.region_proposal = None
-        self.rgb_msg = None
-        self.img_cv2 = None
-
-    def callback(self, rgb_msg):
-        self.rgb_msg = rgb_msg
-
-    def listen(self):
-        self.region_proposal = rospy.wait_for_message('/hri_region_proposal/region_proposal', Float32MultiArray)
-        self.img_cv2 = helper.bridge.imgmsg_to_cv2(self.rgb_msg, desired_encoding="rgb8")
-
-
-def main(helper, tracker_name="kcf"):
-    initBB = helper.region_proposal
-
+def main(args, initBB=None):
     # extract the OpenCV version info
     (major, minor) = cv2.__version__.split(".")[:2]
 
     # if we are using OpenCV 3.2 OR BEFORE, we can use a special factory
     # function to create our object tracker
     if int(major) == 3 and int(minor) < 3:
-        tracker = cv2.Tracker_create(tracker_name.upper())
+        tracker = cv2.Tracker_create(args.tracker.upper())
 
     # otherwise, for OpenCV 3.3 OR NEWER, we need to explicity call the
     # approrpiate object tracker constructor:
@@ -52,12 +32,22 @@ def main(helper, tracker_name="kcf"):
 
         # grab the appropriate object tracker using our dictionary of
         # OpenCV object tracker objects
-        tracker = OPENCV_OBJECT_TRACKERS[tracker_name]()
+        tracker = OPENCV_OBJECT_TRACKERS[args.tracker]()
+
+    # if a video path was not supplied, grab the reference to the web cam
+    if not vars(args).get("video", False):
+        print("[INFO] starting video stream...")
+        vs = VideoStream(src=0).start()
+        time.sleep(1.0)
+
+    # otherwise, grab a reference to the video file
+    else:
+        vs = cv2.VideoCapture(args.video)
 
     # initialize the FPS throughput estimator
     fps = None
 
-    # Check if initialisation of tracker is necessary because of passed initBB
+    # Check if initialisation of tracker is necessary because of passes initBB
     if initBB is not None:
         initTracker = True
     else:
@@ -65,7 +55,15 @@ def main(helper, tracker_name="kcf"):
 
     # loop over frames from the video stream
     while True:
-        frame = helper.img_cv2
+        # grab the current frame, then handle if we are using a
+        # VideoStream or VideoCapture object
+        frame = vs.read()
+        frame = frame[1] if vars(args).get("video", False) else frame
+
+        # check to see if we have reached the end of the stream
+        if frame is None:
+            break
+
         # resize the frame (so we can process it faster), grab the frame dimensions and adjust bounding box
         resize_scale = 0.25
         frame = cv2.resize(frame, None, fx=resize_scale, fy=resize_scale)
@@ -97,7 +95,7 @@ def main(helper, tracker_name="kcf"):
             # initialize the set of information we'll be displaying on
             # the frame
             info = [
-                ("Tracker", tracker_name),
+                ("Tracker", args.tracker),
                 ("Success", "Yes" if success else "No"),
                 ("FPS", "{:.2f}".format(fps.fps())),
             ]
@@ -126,24 +124,24 @@ def main(helper, tracker_name="kcf"):
         elif key == ord('q') or key == 27:
             break
 
+    # if we are using a webcam, release the pointer
+    if not vars(args).get("video", False):
+        vs.stop()
+
+    # otherwise, release the file pointer
+    else:
+        vs.release()
+
     # close all windows
     cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
 
-    rospy.init_node('hri_object_tracking')
-    helper = InstanceHelper()
+    # construct the argument parser and parse the arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--video", type=str, help="path to input video file")
+    parser.add_argument("-t", "--tracker", type=str, default="kcf", help="OpenCV object tracker type")
+    args = parser.parse_args()
 
-    while not rospy.is_shutdown():
-        rospy.rostime.wallsleep(0.5)
-
-        # record key press
-        key = cv2.waitKey(30) & 0xFF
-
-        # ENTER or SPACE is pressed
-        if key == 13 or key == 32:
-            helper.listen()
-            main(helper, tracker_name="kcf")
-
-
+    main(args)

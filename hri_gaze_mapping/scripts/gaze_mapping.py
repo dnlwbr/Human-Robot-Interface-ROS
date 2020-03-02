@@ -1,105 +1,178 @@
 #!/usr/bin/env python
-
-import rospy
-import csv
-import argparse
 import cv2
 import numpy as np
-import message_filters
-from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import Float32MultiArray
-from cv_bridge import CvBridge
+import rospy
+import sys
+from cv_bridge import CvBridge, CvBridgeError
+from sensor_msgs.msg import CompressedImage
 
 from GazeMapper import GazeMapper
+from hri_gaze_mapping.msg import Gaze
+from hri_udp_publisher.msg import Journal
+
+
+def show_circle(img, gp, radius, color=(0, 255, 0), thickness=5):
+    tmp = img.copy()
+    cv2.circle(tmp, (gp[0], gp[1]), radius, color, thickness)
+    return tmp
 
 
 class InstanceHelper:
-    def __init__(self, args):
-        self.pathToFolder = args.pathToFolder
+    def __init__(self):
         self.bridge = CvBridge()
         self.mapper = GazeMapper()
-        self.robot_image_sub = message_filters.Subscriber("/kinect2/sd/image_color_rect", Image)
-        self.robot_info_sub = message_filters.Subscriber('/kinect2/sd/camera_info', CameraInfo)
-        self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Float32MultiArray, queue_size=10)
+        self.journal = Journal()
+        self.journal_dict = dict()
+        self.robot_gaze = []
+        self.human_gaze = []
+        self.human_gaze_imgs = []
+        self.human_img = None
+        self.human_img_sub = rospy.Subscriber("/EyeRecTooImage/compressed", CompressedImage, self.callback_human,
+                                              queue_size=1, buff_size=2 ** 20)
+        rospy.loginfo("Subscribed to /EyeRecTooImage/compressed")
+        self.robot_img = None
+        self.robot_img_sub = rospy.Subscriber("/kinect2/hd/image_color/compressed", CompressedImage, self.callback,
+                                              queue_size=1, buff_size=2 ** 20)
+        rospy.loginfo("Subscribed to /kinect2/hd/image_color/compressed")
+        self.robot_gaze_pub = rospy.Publisher('/hri_gaze_mapping/robot_gaze', Gaze, queue_size=1)
+        rospy.loginfo("Publishing robot gaze to /hri_gaze_mapping/robot_gaze")
 
-    def callback(self, rgb_msg, camera_info):
-        timestamps = readTimestamps(self.pathToFolder + '/FieldData.tsv')
-        journal = readJournal(self.pathToFolder + '/JournalData.tsv')
-        matched = match(timestamps, journal, 'sync.timestamp')
-        human_view = cv2.VideoCapture(self.pathToFolder + '/Field.mp4')
+    def callback_human(self, human_img):
+        try:
+            self.human_img = self.bridge.compressed_imgmsg_to_cv2(human_img, desired_encoding="passthrough")
+        except CvBridgeError as e:
+            print(e)
 
-        robot_image_rgb = self.bridge.imgmsg_to_cv2(rgb_msg, desired_encoding="rgb8")
+    def callback(self, robot_img):
+        try:
+            self.robot_img = self.bridge.compressed_imgmsg_to_cv2(robot_img, desired_encoding="passthrough")
+        except CvBridgeError as e:
+            print(e)
 
-        # Check if total number of frames equals number of timestamps
-        assert human_view.get(cv2.CAP_PROP_FRAME_COUNT) == len(timestamps)
-        # Starting frame if desired
-        human_view.set(cv2.CAP_PROP_POS_FRAMES, len(timestamps) - 1)
-        ret, frame = human_view.read()
-        if not ret:
-            exit(1)
-        cur_frame_idx = int(human_view.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        self.journal = rospy.wait_for_message('hri_udp_publisher/gaze_journal', Journal)
+        keys = self.journal.keys
+        values = self.journal.values
+        self.journal_dict = dict(zip(keys, values))
 
-        get = lambda name: int(round(np.median([float(entry[name]) for entry in matched[cur_frame_idx]['matches']])))
-        x = get('field.gaze.x')
-        y = get('field.gaze.y')
+    def gaze_preview(self, gp_human, gp_robot=None):
+        if gp_robot is None:
+            field_preview = show_circle(self.human_img, gp_human, 20, color=(0, 0, 255))
+            robot_preview = self.robot_img
+        else:
+            field_preview = show_circle(self.human_img, gp_human, 20)
+            robot_preview = show_circle(self.robot_img, gp_robot, 40, thickness=10)
 
-        self.mapper.update(robot_image_rgb, frame)
-        human_gaze, robot_gaze = self.mapper.map((x, y))
+        font = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = 1
+        margin = 10
+        color = (0, 255, 0)
+        thickness = 1
 
-        self.robot_gaze_pub.publish(robot_gaze)
+        text = f"Selected points: {len(self.human_gaze)}"
+        text_size = cv2.getTextSize(text, font, font_scale, thickness)
+        text_width = text_size[0][0]
+        text_height = text_size[0][1]
+        line_height = text_height + text_size[1] + margin
+
+        x = self.human_img.shape[1] - margin - text_width
+        y = margin + text_height + 0 * line_height
+
+        # cv2.putText(field_preview, text, (x, y), font, font_scale, color, thickness)
+
+        # Print warnings
+        if self.mapper.img_ids is None or self.mapper.ref_ids is None:
+            warning = "No markers detected"
+            warning_width = (cv2.getTextSize(warning, font, font_scale, thickness))[0][0]
+            color = (0, 0, 255)
+            if self.mapper.img_ids is None:
+                x = self.human_img.shape[1] - margin - warning_width
+                y = margin + text_height + 0 * line_height
+                cv2.putText(field_preview, warning, (x, y), font, font_scale, color, thickness)
+            if self.mapper.ref_ids is None:
+                x = self.robot_img.shape[1] - margin - warning_width
+                y = margin + text_height + 0 * line_height
+                cv2.putText(robot_preview, warning, (x, y), font, font_scale, color, thickness)
+
+        for rgp in self.robot_gaze:
+            # TODO: Problem if Robot moves after gaze point is set
+            robot_preview = show_circle(robot_preview, rgp, 40, thickness=10)
+
+        cv2.namedWindow('Field view', cv2.WINDOW_GUI_EXPANDED)
+        cv2.imshow("Field view", field_preview)
+        cv2.namedWindow('Robot with human gaze', cv2.WINDOW_GUI_EXPANDED)
+        cv2.imshow("Robot with human gaze", robot_preview)
 
 
-def readTimestamps(filename):
-    with open(filename, newline='\n') as file:
-        reader = csv.DictReader(file, delimiter='\t')
-        return [float(row['timestamp']) for row in reader]
+def main():
+    rospy.init_node('hri_gaze_mapping', disable_signals=True)
+    instance = InstanceHelper()
+    robot_gaze_msg = Gaze()
 
+    rospy.sleep(1.5)
 
-def readJournal(filename):
-    with open(filename, newline='\n') as file:
-        reader = csv.DictReader(file, delimiter='\t')
-        return [row for row in reader]
+    assert instance.journal_dict != {}, "Gaze is published?"
 
+    while not rospy.is_shutdown():
+        x = int(round(float(instance.journal_dict["field.gaze.x"])))
+        y = int(round(float(instance.journal_dict["field.gaze.y"])))
+        human_gaze = np.float32([x, y])
 
-def match(timestamps, source, key_name='timestamp'):
-    data = [{'timestamp': ts, 'matches': []} for ts in timestamps]
+        ret = instance.mapper.update(instance.human_img, instance.robot_img)
 
-    current = 0
-    lastIdx = len(data)-1
-    for row in source:
-        ts = float(row[key_name])
+        if ret:
+            robot_gaze = instance.mapper.map(human_gaze)
+            robot_gaze_msg.x, robot_gaze_msg.y = robot_gaze
+            instance.robot_gaze_pub.publish(robot_gaze_msg)
+        else:
+            robot_gaze = None
 
-        # find first entry equal or larger than ts
-        while ts > data[current]['timestamp'] and current < lastIdx:
-            current += 1
+        instance.gaze_preview(human_gaze, robot_gaze)
 
-        timediff = lambda idx: abs(ts - data[idx]['timestamp'])
+        key = cv2.waitKey(2) & 0xFF
+        # PRESENTER1 is pressed
+        if key == 86:
+            # Freeze preview
+            while True:
+                key = cv2.waitKey(100) & 0xFF
+                if key == 86:
+                    break
+        # SPACE or PRESENTER2 is pressed
+        elif (key == 32 or key == 85) and robot_gaze is not None:
+            instance.robot_gaze.append(robot_gaze)
+            instance.human_gaze.append(human_gaze)
+            instance.human_gaze_imgs.append(instance.human_img)
+            print("Gaze point added:")
+            print(f"\tHuman: {human_gaze}")
+            print(f"\tRobot: {robot_gaze}")
+        # BACKSPACE is pressed
+        elif key == 8:
+            instance.robot_gaze = []
+            instance.human_gaze = []
+            instance.human_gaze_imgs = []
+            print("Reset selection")
+        # ENTER is pressed
+        elif key == 13:
+            for i, gp in enumerate(instance.human_gaze):
+                human_view_gaze = instance.human_gaze_imgs[i]
+                human_view_gaze = show_circle(human_view_gaze, gp, 20, thickness=3)
+                cv2.imwrite(f'human_gaze{i}.jpg', human_view_gaze)
+            robot_view_gaze = instance.robot_img.copy()
+            for gp in instance.robot_gaze:
+                robot_view_gaze = show_circle(robot_view_gaze, gp, 40, thickness=10)
+            cv2.imwrite('robot_gaze.jpg', robot_view_gaze)
+            break
+        # q or Esc is pressed
+        elif key == ord('q') or key == 27:
+            print("Abort.")
+            sys.exit(0)
 
-        # Is current or prev closer to ts?
-        prev = max(0, current-1)
-        matchedIdx = prev if timediff(prev) < timediff(current) else current
-        data[matchedIdx]['matches'].append(row)
+    cv2.destroyAllWindows()
 
-    return data
+    rospy.loginfo("Shutting down ROS hri_gaze_mapping module")
+    rospy.signal_shutdown("Gaze mapping finished")
+
+    return instance.robot_gaze
 
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Overlay gaze on top of field video and map gaze on robot view')
-    parser.add_argument('pathToFolder', action='store')
-    args = parser.parse_args()
-
-    rospy.init_node('hri_gaze_mapping')
-
-    helper = InstanceHelper(args)
-
-    ts = message_filters.ApproximateTimeSynchronizer([helper.robot_image_sub, helper.robot_info_sub], 10, 0.1)
-    ts.registerCallback(helper.callback)
-
-    try:
-        # spin() keeps python from exiting until this node is stopped
-        rospy.spin()
-    except KeyboardInterrupt:
-        print("Shutting down gaze mapping")
-
-    cv2.destroyAllWindows()
+    main()

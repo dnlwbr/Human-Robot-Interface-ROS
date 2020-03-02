@@ -7,29 +7,33 @@ class GazeMapper:
         self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
         self.parameters = cv2.aruco.DetectorParameters_create()
         self.parameters.markerBorderBits = 2
-        # self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         self.ref, self.img = None, None
         self.ref_corners, self.img_corners = None, None
         self.ref_ids, self.img_ids = None, None
         self.ref_dimensions, self.img_dimensions = None, None
 
-    def update(self, ref_img, img):
-        self.ref = ref_img
+    def update(self, img, ref_img):
         self.img = img
-        self.ref_dimensions = self.ref.shape
+        self.ref = ref_img
         self.img_dimensions = self.img.shape
-        self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
+        self.ref_dimensions = self.ref.shape
         self.img_corners, self.img_ids, _ = self.detect(self.img)
-        self.ref_ids = self.ref_ids.flatten()
-        self.img_ids = self.img_ids.flatten()
+        self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
 
-        if np.all(self.ref_ids is not None):
-            self.ref_corners = np.asarray(self.ref_corners).reshape(4*len(self.ref_ids), 2)
-
-        if np.all(self.img_ids is not None):
+        if np.all(self.img_ids) is not None:
+            self.img_ids = self.img_ids.flatten()
             self.img_corners = np.asarray(self.img_corners).reshape(4 * len(self.img_ids), 2)
 
-        assert len(self.ref_ids) >= 2, 'Reference image must contain at least two markers'
+        if np.all(self.ref_ids) is not None:
+            self.ref_ids = self.ref_ids.flatten()
+            self.ref_corners = np.asarray(self.ref_corners).reshape(4*len(self.ref_ids), 2)
+
+        if np.all(self.img_ids) is not None and np.all(self.ref_ids) is not None and len(
+                np.intersect1d(self.img_ids, self.ref_ids)) > 1:
+            return True
+        else:
+            return False
 
     def detect(self, img):
         if np.shape(img)[2] == 3:
@@ -39,12 +43,8 @@ class GazeMapper:
         return cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.parameters)
 
     def map(self, gazepoint):
-        def show_circle(img, gp, radius):
-            tmp = img.copy()
-            cv2.circle(tmp, (gp[0], gp[1]), radius, (0, 255, 0), 5)
-            return tmp
-
-        field = show_circle(self.img, gazepoint, 20)
+        assert np.all(self.img_ids) is not None, 'Field image must contain at least one marker'
+        assert np.all(self.ref_ids) is not None, 'Reference image must contain at least one marker'
 
         matching_ids = np.intersect1d(self.ref_ids, self.img_ids)
         if len(matching_ids) > 0:
@@ -70,11 +70,4 @@ class GazeMapper:
             src = np.float32([[[gazepoint[0], gazepoint[1]]]])
             dst = cv2.perspectiveTransform(src, H)
 
-            # Previews
-            field_preview = cv2.resize(field, None, fx=0.4, fy=0.4)
-            cv2.imshow("field", field_preview)
-            robot_gaze = show_circle(self.ref, dst[0][0], 30)
-            robot_preview = cv2.resize(robot_gaze, None, fx=0.5, fy=0.5)
-            cv2.imshow("Robot with human gaze", robot_preview)
-
-            return src[0][0], dst[0][0]
+            return dst[0][0]
