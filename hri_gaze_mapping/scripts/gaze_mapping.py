@@ -6,7 +6,7 @@ import sys
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage
 
-from GazeMapper import GazeMapper
+from GazeMapper import GazeMapperAruco as GazeMapper
 from hri_gaze_mapping.msg import Gaze
 from hri_udp_publisher.msg import Journal
 
@@ -74,24 +74,13 @@ class InstanceHelper:
         text_height = text_size[0][1]
         line_height = text_height + text_size[1] + margin
 
-        x = self.human_img.shape[1] - margin - text_width
-        y = margin + text_height + 0 * line_height
-
+        # x = self.human_img.shape[1] - margin - text_width
+        # y = margin + text_height + 0 * line_height
         # cv2.putText(field_preview, text, (x, y), font, font_scale, color, thickness)
 
-        # Print warnings
-        if self.mapper.img_ids is None or self.mapper.ref_ids is None:
-            warning = "No markers detected"
-            warning_width = (cv2.getTextSize(warning, font, font_scale, thickness))[0][0]
-            color = (0, 0, 255)
-            if self.mapper.img_ids is None:
-                x = self.human_img.shape[1] - margin - warning_width
-                y = margin + text_height + 0 * line_height
-                cv2.putText(field_preview, warning, (x, y), font, font_scale, color, thickness)
-            if self.mapper.ref_ids is None:
-                x = self.robot_img.shape[1] - margin - warning_width
-                y = margin + text_height + 0 * line_height
-                cv2.putText(robot_preview, warning, (x, y), font, font_scale, color, thickness)
+        if self.mapper.__class__.__name__ == "GazeMapperAruco":
+            self.mapper.print_warning(field_preview, robot_preview, font, font_scale, thickness, margin, text_height,
+                                      line_height)
 
         for rgp in self.robot_gaze:
             # TODO: Problem if Robot moves after gaze point is set
