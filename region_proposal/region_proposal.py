@@ -8,78 +8,36 @@ Use "l" to display less rects, 'm' to display more rects, "q" to quit.
 
 import cv2
 import numpy as np
+import pickle
 import sys
 
 from gaze_mapping import show_circle
+from SelectiveSearch import SelectiveSearch
 
 
-def main(img, method, gazepoints=None, path='.'):
-    # speed-up using multi threads
-    # print(cv2.getNumThreads())
-    # cv2.setNumThreads(4)
+def dump_proposals(self, rects, path="rects.pkl"):
+    file = open(path, 'wb')
+    pickle.dump(rects, file)
+    file.close()
 
-    if gazepoints is None:
-        gazepoints = []
 
-    # Ignore boxes bigger than (value*100)% of the height/width
-    ignore = 1
+def load_proposals(self, path="rects.pkl"):
+    file = open(path, 'rb')
+    rects = pickle.load(file)
 
-    # create resized copy of image
-    resize_scale = 0.25
-    img_resized = cv2.resize(img, None, fx=resize_scale, fy=resize_scale)
+    return rects
 
-    # create Selective Search Segmentation Object using default parameters
-    ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
 
-    # set input image on which we will run segmentation
-    ss.setBaseImage(img_resized)
+def main(img, method, gazepoints=[], path='.'):
 
-    if method == 'f':
-        # Switch to fast but low recall Selective Search method
-        ss.switchToSelectiveSearchFast()
-    elif method == 'q':
-        # Switch to high recall but slow Selective Search method
-        ss.switchToSelectiveSearchQuality()
-    elif method == 's':
-        # Switch to Single Strategy
-        ss.switchToSingleStrategy()
-
-    # if argument is neither f,q nor s print help message
-    else:
-        print(__doc__)
-        sys.exit(1)
-
-    # run selective search segmentation on input image
+    ss = SelectiveSearch(img, method)
     rects = ss.process()
+    rects = ss.sort_out(rects, gazepoints)
 
-    # rescale rects
-    rects = np.around(rects / resize_scale)
-    rects = rects.astype(int)
-
-    # Get image height/width
-    img_height, img_width = img.shape[:2]
-
-    # analyse and sort out region proposals
-    del_idx = []
-    for i, rect in enumerate(rects):
-        x, y, w, h = rect
-        if not all(x <= gp[0] <= x + w and y <= gp[1] <= y + h
-                   and w < img_width * ignore and h < img_height * ignore for gp in gazepoints):
-            del_idx.append(i)
-    rects_sorted = np.delete(rects, del_idx, axis=0)
-    rects = rects_sorted
-
-    ################################
-    # # Save proposals if necessary
-    # import pickle
-    # file = open('rects.pkl', 'wb')
-    # pickle.dump(rects, file)
-    # file.close()
-    # # Load proposals if necessary
-    # import pickle
-    # file = open('rects.pkl', 'rb')
-    # rects = pickle.load(file)
-    ################################
+    # Save proposals if necessary
+    # ss.dump_proposals(rects, "rects.pkl")
+    # Load proposals if necessary
+    # rects = ss.load_proposals("rects.pkl")
 
     # number of region proposals to show
     num_show_rects = 1 if len(gazepoints) > 0 else 100
@@ -189,9 +147,9 @@ def main(img, method, gazepoints=None, path='.'):
 
 if __name__ == '__main__':
     # If image path and f/q/s is not passed as command line arguments, quit and display help message
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
+    # if len(sys.argv) < 3:
+    #     print(__doc__)
+    #     sys.exit(1)
 
     # read image
     input_image = cv2.imread(sys.argv[1])

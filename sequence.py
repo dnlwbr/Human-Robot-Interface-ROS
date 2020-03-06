@@ -8,7 +8,7 @@ import sys
 import cv2
 
 import gaze_mapping
-import region_proposal
+from region_proposal import region_proposal
 # import object_tracking
 
 
