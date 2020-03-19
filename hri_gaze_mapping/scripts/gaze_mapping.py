@@ -6,7 +6,7 @@ import sys
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage
 
-from GazeMapper import GazeMapperAruco as GazeMapper
+from GazeMapper import GazeMapperFeature as GazeMapper
 from hri_gaze_mapping.msg import Gaze
 from hri_udp_publisher.msg import Journal
 
@@ -106,7 +106,7 @@ def main():
         y = int(round(float(instance.journal_dict["field.gaze.y"])))
         human_gaze = np.float32([x, y])
 
-        ret = instance.mapper.update(instance.human_img, instance.robot_img)
+        ret = instance.mapper.update(instance.human_img, instance.robot_img, human_gaze)
 
         if ret:
             robot_gaze = instance.mapper.map(human_gaze)

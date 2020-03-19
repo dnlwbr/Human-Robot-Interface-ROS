@@ -7,12 +7,14 @@ class GazeMapper:
     def __init__(self):
         self.img, self.ref = None, None
         self.img_dimensions, self.ref_dimensions = None, None
+        self.human_gp = None
 
-    def update(self, img, ref_img):
+    def update(self, img, ref_img, human_gp=None):
         self.img = img
         self.ref = ref_img
         self.img_dimensions = self.img.shape
         self.ref_dimensions = self.ref.shape
+        self.human_gp = human_gp
 
 
 class GazeMapperAruco(GazeMapper):
@@ -26,8 +28,8 @@ class GazeMapperAruco(GazeMapper):
         self.img_ids, self.img_corners = None, None
         self.ref_ids, self.ref_corners = None, None
 
-    def update(self, img, ref_img):
-        GazeMapper.update(self, img, ref_img)
+    def update(self, img, ref_img, human_gp=None):
+        GazeMapper.update(self, img, ref_img, human_gp)
         self.img_corners, self.img_ids, _ = self.detect(self.img)
         self.ref_corners, self.ref_ids, _ = self.detect(self.ref)
 
@@ -97,56 +99,99 @@ class GazeMapperAruco(GazeMapper):
                 cv2.putText(robot_preview, warning, (x, y), font, font_scale, color, thickness)
 
 
-class GazeMapperOrb(GazeMapper):
+class GazeMapperFeature(GazeMapper):
 
-    def __init__(self):
+    def __init__(self, descriptors="orb"):
         GazeMapper.__init__(self)
-        self.orb = cv2.ORB_create()  # Initiate ORB detector
-        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)  # create BFMatcher object
-        self.GOOD_MATCH_PERCENT = 0.15
         self.img_kp, self.img_des = None, None
         self.ref_kp, self.ref_des = None, None
-        self.match_img = None
+        self.matches = None
+        self.descriptors = descriptors
+        if descriptors == "orb":
+            self.orb = cv2.ORB_create()  # Initiate ORB detector
+            self.GOOD_MATCH_PERCENT = 0.1
+            self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)  # create BFMatcher object
+        elif descriptors == "sift":
+            self.sift = cv2.xfeatures2d.SIFT_create()  # Initiate SIFT detector
+            self.FLANN_INDEX_KDTREE = 1
+            self.index_params = dict(algorithm=self.FLANN_INDEX_KDTREE, trees=5)
+            self.search_params = dict(checks=50)  # or pass empty dictionary
+            self.matcher = cv2.FlannBasedMatcher(self.index_params, self.search_params)
+            # self.matcher = cv2.BFMatcher()
+        else:
+            raise ValueError("Invalid descriptor")
 
-    def update(self, img, ref_img):
-        GazeMapper.update(self, img, ref_img)
+    def crop(self):
+        if self.human_gp is not None:
+            xy_crop = min(np.shape(self.img)[0], np.shape(self.img)[1]) * 0.2
+            x_min = int(max(0, self.human_gp[0]-xy_crop))
+            x_max = int(min(np.shape(self.img)[1]-1, self.human_gp[0]+xy_crop))
+            y_min = int(max(0, self.human_gp[1]-xy_crop))
+            y_max = int(min(np.shape(self.img)[0]-1, self.human_gp[1]+xy_crop))
+            self.img = self.img[y_min:y_max, x_min:x_max]
+
+    def update(self, img, ref_img, human_gp=None):
+        GazeMapper.update(self, img, ref_img, human_gp)
+        self.ref = cv2.resize(self.ref, (self.img_dimensions[1], self.img_dimensions[0]))
+        self.crop()  # Crop human image around gaze point
         self.img_kp, self.img_des = self.detect(self.img)
         self.ref_kp, self.ref_des = self.detect(self.ref)
 
-        # self.ref = cv2.resize(ref_img, (self.img_dimensions[1], self.img_dimensions[0]))
-
         if None not in [self.img_kp, self.ref_kp]:
-            return True
+            self.matches = self.match(self.img_des, self.ref_des)
+            if len(self.matches) >= 4:
+                return True
+            else:
+                return False
         else:
             return False
 
     def detect(self, img):
-        # return the keypoints and descriptors found with ORB
-        return self.orb.detectAndCompute(img, None)
+        if self.descriptors == "orb":
+            # return the keypoints and descriptors found with ORB
+            return self.orb.detectAndCompute(img, None)
+        elif self.descriptors == "sift":
+            # return the keypoints and descriptors found with SIFT
+            return self.sift.detectAndCompute(img, None)
+        else:
+            raise ValueError("Invalid descriptor")
+
+    def match(self, des1, des2):
+        if self.descriptors == "orb":
+            # Match descriptors
+            matches = self.matcher.match(des1, des2)
+            # Sort them in the order of their distance.
+            matches = sorted(matches, key=lambda x: x.distance)
+            # Remove not so good matches
+            numGoodMatches = int(len(matches) * self.GOOD_MATCH_PERCENT)
+            matches = matches[:numGoodMatches]
+        elif self.descriptors == "sift":
+            # Match descriptors
+            matches = self.matcher.knnMatch(des1, des2, k=2)
+            # Apply ratio test
+            good = []
+            # distances = []
+            for m, n in matches:
+                if m.distance < 0.7 * n.distance:
+                    good.append(m)
+                    # distances.append(m.distance)
+            matches = good
+            # matches = [x for _, x in sorted(zip(distances, good))]
+            # matches = matches[0:5]
+        else:
+            raise ValueError("Invalid descriptor")
+
+        # draw keypoints and matches
+        match_img = cv2.drawMatches(self.img, self.img_kp, self.ref, self.ref_kp, matches,
+                                    None)  # , flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        cv2.imshow("features", match_img)
+        return matches
 
     def map(self, gazepoint):
 
-        # x_crop = 50#np.shape(img)[1] * 0.2
-        # y_crop = 50#np.shape(img)[0] * 0.1
-        # img = img[gazepoint[1]-y_crop:gazepoint[1]+y_crop, gazepoint[0]-x_crop:gazepoint[0]+x_crop]
-
-        # Match descriptors.
-        matches = self.bf.match(self.img_des, self.ref_des)
-
-        # Sort them in the order of their distance.
-        matches = sorted(matches, key=lambda x: x.distance)
-
-        # Remove not so good matches
-        numGoodMatches = int(len(matches) * self.GOOD_MATCH_PERCENT)
-        matches = matches[:numGoodMatches]
-
-        # draw keypoints and matches
-        match_img = cv2.drawMatches(self.img, self.img_kp, self.ref, self.ref_kp, matches, None, flags=0)
-        cv2.imshow("features", match_img)
-
         # extract the matched keypoints
-        src = np.float32([self.img_kp[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-        dst = np.float32([self.ref_kp[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+        src = np.float32([self.img_kp[m.queryIdx].pt for m in self.matches]).reshape(-1, 1, 2)
+        dst = np.float32([self.ref_kp[m.trainIdx].pt for m in self.matches]).reshape(-1, 1, 2)
 
         # Transform human gaze to robot view
         H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
