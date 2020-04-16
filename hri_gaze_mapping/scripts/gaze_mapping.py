@@ -6,7 +6,7 @@ import sys
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import CompressedImage
 
-from GazeMapper import GazeMapperFeature as GazeMapper
+from GazeMapper import GazeMapperAruco as GazeMapper
 from hri_gaze_mapping.msg import Gaze
 from hri_udp_publisher.msg import Journal
 
