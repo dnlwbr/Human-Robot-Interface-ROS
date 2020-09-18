@@ -12,22 +12,27 @@ int main (int argc, char** argv)
 {
     ros::init(argc, argv, "hri_cloud_segmentation");
     ros::NodeHandle n;
-    CloudSegmentation cs;
-    ros::Subscriber sub = n.subscribe<CloudSegmentation::PointCloudT>("/points2", 1, &CloudSegmentation::callback, &cs);
+    MinCutSegmentation seg;
+    ROS_INFO("Subscribing to /HoloLens2/Gaze/HitPoint");
+    ros::Subscriber sub_gaze = n.subscribe("/HoloLens2/Gaze/HitPoint", 1, &CloudSegmentation::callback_gaze, dynamic_cast<CloudSegmentation*>(&seg));
     ROS_INFO("Subscribing to /points2");
-    ros::Publisher pub = n.advertise<CloudSegmentation::PointCloudT>("/points2/segmented", 1);
+    ros::Subscriber sub_cloud = n.subscribe<CloudSegmentation::PointCloudT>("/points2", 1, &CloudSegmentation::callback_cloud, dynamic_cast<CloudSegmentation*>(&seg));
     ROS_INFO("Publishing to /points2/segmented");
+    ros::Publisher pub = n.advertise<CloudSegmentation::PointCloudT>("/points2/segmented", 1);
+//    ROS_INFO("Publishing to /points2/sv_labeled");
+//    ros::Publisher pub2 = n.advertise<pcl::PointCloud<pcl::PointXYZL>>("/points2/sv_labeled", 1);
     ros::Rate loop_rate(5);
 
-    while (!cs.isInitialized()) {
+    while (!seg.isInitialized()) {
         ros::spinOnce();
         loop_rate.sleep();
     }
 
     while (ros::ok())
     {
-        cs.segment();
-        pub.publish(*cs.cloud_segmented);
+        seg.segment();
+        pub.publish(*seg.cloud_segmented);
+//        pub2.publish(*seg.sv_labeled_cloud);
         ros::spinOnce();    // process callbacks
         loop_rate.sleep();
     }
