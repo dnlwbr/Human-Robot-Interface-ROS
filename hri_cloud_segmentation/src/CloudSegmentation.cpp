@@ -8,6 +8,7 @@
 CloudSegmentation::CloudSegmentation()
     : cloud_filtered(new PointCloudT),
       cloud_segmented(new PointCloudT) {
+//    bounding_box = pcl::BoundingBoxXYZ();
 }
 
 void CloudSegmentation::callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg)
@@ -42,6 +43,17 @@ void  CloudSegmentation::filter() {
     voxel_filter.setInputCloud(cloud_incoming);
     voxel_filter.filter(*cloud_filtered);
 }
+
+/*void CloudSegmentation::CalcBoundingBox() {
+    PointT minPoint, maxPoint;
+    pcl::getMinMax3D(*cloud_segmented, minPoint, maxPoint);
+//    bounding_box.x = (minPoint.x + maxPoint.x) / 2;
+//    bounding_box.y = (minPoint.y + maxPoint.y) / 2;
+//    bounding_box.z = (minPoint.z + maxPoint.z) / 2;
+    bounding_box.width = maxPoint.x - minPoint.x;
+    bounding_box.height = maxPoint.y - minPoint.y;
+    bounding_box.depth = maxPoint.z - minPoint.z;
+}*/
 
 
 
@@ -248,16 +260,18 @@ LCCPSegmentation::LCCPSegmentation()
 
 void LCCPSegmentation::segment() {
 
+//    filter();
+
     /// Normal estimation
     normal_estimator.setSearchMethod(tree);
-    normal_estimator.setInputCloud(cloud_incoming);
+    normal_estimator.setInputCloud(cloud_filtered);
     normal_estimator.setKSearch(50);
     normal_estimator.compute(*cloud_normals);
 
     /// Preparation of Input: Supervoxel Oversegmentation
     pcl::SupervoxelClustering<PointT> super(voxel_resolution, seed_resolution);
 //    super.setUseSingleCameraTransform(use_single_cam_transform);
-    super.setInputCloud(cloud_incoming);
+    super.setInputCloud(cloud_filtered);
 //    super.makeSupervoxelNormalCloud();
     super.setNormalCloud(cloud_normals);
     super.setColorImportance(color_importance);
@@ -296,6 +310,11 @@ void LCCPSegmentation::segment() {
     cloud_segmented = sv_labeled_cloud->makeShared();
     lccp.relabelCloud(*cloud_segmented);
     lccp.getSVAdjacencyList(sv_adjacency_list);  // Needed for visualization
+
+//    for (int i = 0; i < cloud_segmented->points.size (); ++i) {
+//        if (cloud_segmented->points[i].x == GazeHitPoint.x)
+//            std::cout << cloud_segmented->points[i].label << std::endl;
+//    }
 }
 
 
@@ -321,17 +340,39 @@ void MinCutSegmentation::segment() {
     foreground_points->clear();
     foreground_points->points.push_back(GazeHitPoint);
     seg.setForegroundPoints(foreground_points);
-
     seg.setSigma(0.01); // Default: 0.25 (should be chosen depending on cloud resolution)
-    seg.setRadius(0.05); // Default: 4
+//    seg.setRadius(0.05); // Default: 4
     seg.setNumberOfNeighbours(3); // Default: 14
-    seg.setSourceWeight(1.5); // Default: 0.8
+//    seg.setSourceWeight(1.25); // Default: 0.8
 
+    double maxflow = 1;
+    double flow = 1;
+    int i = 1;
     std::vector<pcl::PointIndices> clusters;
-    seg.extract (clusters);
 
-    std::cout << "Maximum flow is " << seg.getMaxFlow () << std::endl;
+    while (flow / maxflow > 0.99) // && foreground_points->size() <= 5000)
+    {
+        seg.setRadius(0.01 * i);
+        seg.extract (clusters);
 
-    cloud_segmented = seg.getColoredCloud();
+        flow = seg.getMaxFlow();
+        if (flow >= maxflow) {
+            maxflow = flow;
+        }
+
+        // Add points to a new cloud (clusters[0]: background, clusters[1]: object)
+        for (std::vector<int>::const_iterator point = clusters[1].indices.begin(); point != clusters[1].indices.end(); point++)
+            foreground_points->points.push_back(cloud_filtered->points[*point]);
+
+        foreground_points->width = foreground_points->points.size();
+        foreground_points->height = 1;
+        foreground_points->is_dense = true;
+//        seg.setForegroundPoints(foreground_points);
+
+        std::cout << "Maximum flow (" << i << ") is " << seg.getMaxFlow() << std::endl;
+        i++;
+    }
+//    cloud_segmented = seg.getColoredCloud();
+    cloud_segmented = foreground_points;
     cloud_segmented->header = cloud_incoming->header; // Workaround...
 }

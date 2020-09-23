@@ -16,6 +16,7 @@
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/search/search.h>
 #include <pcl/search/kdtree.h>
+//#include <pcl/recognition/linemod/line_rgbd.h>
 
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
@@ -39,6 +40,7 @@ public:
     void callback_cloud(PointCloudT::ConstPtr const & msg);
     inline bool isInitialized() const { return isGazeInitialized && isCloudInitialized;}
     virtual void segment() = 0;
+//    pcl::BoundingBoxXYZ bounding_box;
 
 protected:
     bool isGazeInitialized = false;
@@ -50,6 +52,9 @@ protected:
     // Voxel filter
     pcl::VoxelGrid<PointT> voxel_filter;
     void filter();
+
+    // Bounding box
+//    void CalcBoundingBox();
 };
 
 
