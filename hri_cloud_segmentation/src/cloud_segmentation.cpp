@@ -19,8 +19,6 @@ int main (int argc, char** argv)
     ros::Subscriber sub_cloud = n.subscribe<CloudSegmentation::PointCloudT>("/points2", 1, &CloudSegmentation::callback_cloud, dynamic_cast<CloudSegmentation*>(&seg));
     ROS_INFO("Publishing to /points2/segmented");
     ros::Publisher pub = n.advertise<CloudSegmentation::PointCloudT>("/points2/segmented", 1);
-//    ROS_INFO("Publishing to /points2/sv_labeled");
-//    ros::Publisher pub2 = n.advertise<pcl::PointCloud<pcl::PointXYZL>>("/points2/sv_labeled", 1);
     ros::Rate loop_rate(5);
 
     while (!seg.isInitialized()) {
@@ -32,7 +30,6 @@ int main (int argc, char** argv)
     {
         seg.segment();
         pub.publish(*seg.cloud_segmented);
-//        pub2.publish(*seg.sv_labeled_cloud);
         ros::spinOnce();    // process callbacks
         loop_rate.sleep();
     }
