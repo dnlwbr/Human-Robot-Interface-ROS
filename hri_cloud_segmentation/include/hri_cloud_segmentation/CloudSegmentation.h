@@ -5,6 +5,7 @@
 #ifndef HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H
 #define HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H
 
+#include "hri_cloud_segmentation/Segment.h"
 #include <geometry_msgs/PointStamped.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
@@ -29,16 +30,13 @@ public:
     typedef pcl::PointXYZRGB PointT;
     typedef pcl::PointCloud<PointT> PointCloudT;
     PointCloudT::Ptr cloud_segmented;
-    void callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg);
     void callback_cloud(PointCloudT::ConstPtr const & msg);
-    inline bool isInitialized() const { return isGazeInitialized && isCloudInitialized;}
+    virtual bool isInitialized() const = 0;
     virtual void segment() = 0;
 //    pcl::BoundingBoxXYZ bounding_box;
 
 protected:
-    bool isGazeInitialized = false;
-    bool isCloudInitialized = false;
-    PointT GazeHitPoint;
+    static bool isCloudInitialized;
     PointCloudT::ConstPtr cloud_incoming;
     PointCloudT::Ptr cloud_filtered;
 
@@ -56,6 +54,7 @@ class PlanarSegmentation: public CloudSegmentation
 {
 public:
     PlanarSegmentation();
+    inline bool isInitialized() const { return isCloudInitialized;}
     void segment();
 
 private:
@@ -72,13 +71,19 @@ class MinCutSegmentation: public CloudSegmentation
 {
 public:
     MinCutSegmentation();
+    inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized;}
+    bool callback_gaze(hri_cloud_segmentation::Segment::Request &req,
+                       hri_cloud_segmentation::Segment::Response &res);
     void segment();
 
 private:
+    PointT gazeHitPoint;
+    bool isGazeInitialized = false;
     pcl::IndicesPtr indices;
     pcl::PassThrough<PointT> pass;
     pcl::MinCutSegmentation<PointT> seg;
     pcl::PointCloud<PointT>::Ptr foreground_points;
+    float radius = 0.05f;
 };
 
 #endif //HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H

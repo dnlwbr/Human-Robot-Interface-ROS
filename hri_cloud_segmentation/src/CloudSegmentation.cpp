@@ -5,23 +5,14 @@
 #include "../include/hri_cloud_segmentation/CloudSegmentation.h"
 
 
+bool CloudSegmentation::isCloudInitialized(false);
+
+
 CloudSegmentation::CloudSegmentation()
-    : cloud_filtered(new PointCloudT),
+    : cloud_incoming(new PointCloudT),
+      cloud_filtered(new PointCloudT),
       cloud_segmented(new PointCloudT) {
-//    bounding_box = pcl::BoundingBoxXYZ();
-}
-
-void CloudSegmentation::callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg)
-{
-    GazeHitPoint.x = msg->point.x;
-    GazeHitPoint.y = msg->point.y;
-    GazeHitPoint.z = msg->point.z;
-
-    if (!isGazeInitialized)
-    {
-        isGazeInitialized = true;
-        ROS_INFO("First gaze is initialized");
-    }
+    //    bounding_box = pcl::BoundingBoxXYZ();
 }
 
 void CloudSegmentation::callback_cloud(PointCloudT::ConstPtr const & msg)
@@ -107,8 +98,34 @@ MinCutSegmentation::MinCutSegmentation()
 {
 }
 
+bool MinCutSegmentation::callback_gaze(
+        hri_cloud_segmentation::Segment::Request &req,
+        hri_cloud_segmentation::Segment::Response &res)
+{
+    gazeHitPoint.x = req.gazeHitPoint.point.x;
+    gazeHitPoint.y = req.gazeHitPoint.point.y;
+    gazeHitPoint.z = req.gazeHitPoint.point.z;
+
+    radius = req.radius;
+
+    if (!isGazeInitialized)
+    {
+        isGazeInitialized = true;
+        ROS_INFO("First gaze is initialized");
+    }
+
+    segment();
+    ROS_INFO("New segmentation is published");
+
+    if (!cloud_segmented->points.empty()) {
+        res.success = true;
+    } else {
+        res.success = false;
+    }
+}
+
 void MinCutSegmentation::segment() {
-    filter();
+//    filter();
 
     pass.setInputCloud(cloud_filtered);
     pass.setFilterFieldName("z");
@@ -120,10 +137,10 @@ void MinCutSegmentation::segment() {
 
     foreground_points->clear();
     cloud_segmented->clear();
-    foreground_points->points.push_back(GazeHitPoint);
+    foreground_points->points.push_back(gazeHitPoint);
     seg.setForegroundPoints(foreground_points);
     seg.setSigma(0.01); // Default: 0.25 (should be chosen depending on cloud resolution)
-    seg.setRadius(0.05); // Default: 4
+    seg.setRadius(radius); // Default: 4
     seg.setNumberOfNeighbours(3); // Default: 14
     seg.setSourceWeight(1.25); // Default: 0.8
 
@@ -136,6 +153,7 @@ void MinCutSegmentation::segment() {
     for (std::vector<int>::const_iterator point = clusters[1].indices.begin(); point != clusters[1].indices.end(); point++)
         cloud_segmented->points.push_back(cloud_filtered->points[*point]);
 
+    // Update cloud dimensions
     cloud_segmented->width = cloud_segmented->points.size();
     cloud_segmented->height = 1;
     cloud_segmented->is_dense = true;

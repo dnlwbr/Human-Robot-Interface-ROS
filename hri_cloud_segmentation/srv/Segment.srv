@@ -1,0 +1,4 @@
+geometry_msgs/PointStamped gazeHitPoint
+float64 radius
+---
+bool success
