@@ -8,6 +8,7 @@ project(hri_cloud_segmentation)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  geometry_msgs
   pcl_ros
   roscpp
   rospy
@@ -57,10 +58,10 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate services in the 'srv' folder
- add_service_files(
-   FILES
-   Segment.srv
- )
+add_service_files(
+  FILES
+  Segment.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -70,11 +71,13 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
- generate_messages(
-   DEPENDENCIES
-   geometry_msgs
-   #sensor_msgs#   std_msgs
- )
+generate_messages(
+  DEPENDENCIES
+#   geometry_msgs#   sensor_msgs#   std_msgs
+  geometry_msgs
+  sensor_msgs
+  std_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -108,7 +111,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES hri_cloud_segmentation
-#  CATKIN_DEPENDS pcl_ros roscpp rospy sensor_msgs std_msgs
+#  CATKIN_DEPENDS geometry_msgs pcl_ros roscpp rospy sensor_msgs std_msgs
 #  DEPENDS system_lib
 )
 
@@ -153,6 +156,8 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
 )
 
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_generate_messages_cpp)
+
 #############
 ## Install ##
 #############
@@ -162,11 +167,10 @@ target_link_libraries(${PROJECT_NAME}
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
- catkin_install_python(PROGRAMS
+# catkin_install_python(PROGRAMS
 #   scripts/my_python_script
-   scripts/test_client.py
-   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
- )
+#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+# )
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html

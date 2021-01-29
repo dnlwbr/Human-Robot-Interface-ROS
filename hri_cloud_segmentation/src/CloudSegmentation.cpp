@@ -18,7 +18,7 @@ CloudSegmentation::CloudSegmentation()
 void CloudSegmentation::callback_cloud(PointCloudT::ConstPtr const & msg)
 {
     cloud_incoming = msg;
-    *cloud_filtered = *cloud_incoming;
+    //*cloud_filtered = *cloud_incoming;
     cloud_segmented->header = cloud_incoming->header;
 
     if (!isCloudInitialized)
@@ -30,7 +30,7 @@ void CloudSegmentation::callback_cloud(PointCloudT::ConstPtr const & msg)
 
 void  CloudSegmentation::filter() {
     // Filtering input scan to increase speed.
-    voxel_filter.setLeafSize(0.01f, 0.01f, 0.01f);
+    voxel_filter.setLeafSize(0.003f, 0.003f, 0.003f);
     voxel_filter.setInputCloud(cloud_incoming);
     voxel_filter.filter(*cloud_filtered);
 }
