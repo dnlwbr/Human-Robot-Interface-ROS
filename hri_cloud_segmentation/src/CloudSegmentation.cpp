@@ -5,34 +5,80 @@
 #include "../include/hri_cloud_segmentation/CloudSegmentation.h"
 
 
-bool CloudSegmentation::isCloudInitialized(false);
-
-
 CloudSegmentation::CloudSegmentation()
     : cloud_incoming(new PointCloudT),
-      cloud_filtered(new PointCloudT),
-      cloud_segmented(new PointCloudT) {
+      cloud_segmented(new PointCloudT),
+      tf_listener(tf_buffer) {
     //    bounding_box = pcl::BoundingBoxXYZ();
 }
+
 
 void CloudSegmentation::callback_cloud(PointCloudT::ConstPtr const & msg)
 {
     cloud_incoming = msg;
-    //*cloud_filtered = *cloud_incoming;
-    cloud_segmented->header = cloud_incoming->header;
+    cloud_segmented = msg->makeShared();
+    //cloud_segmented->header = msg->header;
 
     if (!isCloudInitialized)
     {
         isCloudInitialized = true;
         ROS_INFO("First cloud is initialized");
+        target_frame = msg->header.frame_id;
     }
 }
 
-void  CloudSegmentation::filter() {
+
+void CloudSegmentation::callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg)
+{
+    if (!isCloudInitialized)
+        return;
+
+    if (msg->header.frame_id != target_frame) {
+        try{
+            transformStamped = tf_buffer.lookupTransform(target_frame, msg->header.frame_id, ros::Time(0), ros::Duration(1.0));
+        }
+        catch (tf2::TransformException &ex) {
+            ROS_WARN("Failure %s\n", ex.what());
+        }
+
+        geometry_msgs::PointStamped msg_transformed;
+        tf2::doTransform(*msg, msg_transformed, transformStamped);
+
+        gazeHitPoint.x = msg_transformed.point.x;
+        gazeHitPoint.y = msg_transformed.point.y;
+        gazeHitPoint.z = msg_transformed.point.z;
+    }
+    else {
+        gazeHitPoint.x = msg->point.x;
+        gazeHitPoint.y = msg->point.y;
+        gazeHitPoint.z = msg->point.z;
+    }
+
+    if (!isGazeInitialized)
+    {
+        isGazeInitialized = true;
+        ROS_INFO("First gaze is initialized");
+    }
+}
+
+
+void CloudSegmentation::pass_through_filter() {
+    PointCloudT::Ptr cloud_filtered(new PointCloudT);
+    pcl::PassThrough<PointT> pass;
+    pass.setInputCloud(cloud_incoming);
+    pass.setFilterFieldName("z");
+    pass.setFilterLimits(0.0, 3.0);
+    pass.filter(*cloud_segmented);
+}
+
+
+void CloudSegmentation::voxel_filter() {
     // Filtering input scan to increase speed.
-    voxel_filter.setLeafSize(0.003f, 0.003f, 0.003f);
-    voxel_filter.setInputCloud(cloud_incoming);
-    voxel_filter.filter(*cloud_filtered);
+    PointCloudT::Ptr cloud_filtered(new PointCloudT);
+    pcl::VoxelGrid<PointT> voxel_grid;
+    voxel_grid.setLeafSize(0.003f, 0.003f, 0.003f);
+    voxel_grid.setInputCloud(cloud_segmented);
+    voxel_grid.filter(*cloud_segmented);
 }
 
 /*void CloudSegmentation::CalcBoundingBox() {
@@ -47,117 +93,71 @@ void  CloudSegmentation::filter() {
 }*/
 
 
+void CloudSegmentation::planar_segmentation() {
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients());
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+    pcl::ExtractIndices<PointT> extract;
+    pcl::SACSegmentation<PointT> seg;
 
-PlanarSegmentation::PlanarSegmentation()
-    : CloudSegmentation(),
-      cloud_extracted(new PointCloudT),
-      coefficients(new pcl::ModelCoefficients()),
-      inliers(new pcl::PointIndices())
-{
-    seg.setOptimizeCoefficients (true); // Optional
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(1000);
     seg.setDistanceThreshold(0.01);
-}
+    seg.setOptimizeCoefficients (true); // Optional
 
-void PlanarSegmentation::segment() {
-    filter();
-
-    int i = 0, nr_points = (int) cloud_filtered->size();
+    int i = 0, nr_points = (int) cloud_segmented->size();
     // While 30% of the original cloud is still there
-    while (cloud_filtered->size() > 0.3 * nr_points) {
+    while (cloud_segmented->size() > 0.5 * nr_points) {
         // Segment the largest planar component from the remaining cloud
-        seg.setInputCloud(cloud_filtered);
+        seg.setInputCloud(cloud_segmented);
         seg.segment(*inliers, *coefficients);
-        if (inliers->indices.size() == 0) {
+        if (inliers->indices.empty()) {
             ROS_DEBUG_STREAM("Could not estimate a planar model for the given dataset.");
             break;
         }
 
         // Extract the inliers
-        extract.setInputCloud(cloud_filtered);
+        extract.setInputCloud(cloud_segmented);
         extract.setIndices(inliers);
-        extract.setNegative(false);
-        extract.filter(*cloud_extracted);
-
-        // Create the filtering object
         extract.setNegative(true);
         extract.filter(*cloud_segmented);
-        cloud_filtered.swap(cloud_segmented);
         i++;
     }
 }
 
 
+void CloudSegmentation::min_cut_segmentation(double radius, bool show_background) {
+    pcl::MinCutSegmentation<PointT> seg;
+    seg.setInputCloud(cloud_segmented);
 
-MinCutSegmentation::MinCutSegmentation()
-        : CloudSegmentation(),
-          indices(new std::vector<int>),
-          foreground_points(new PointCloudT)
-{
-}
-
-bool MinCutSegmentation::callback_gaze(
-        hri_cloud_segmentation::Segment::Request &req,
-        hri_cloud_segmentation::Segment::Response &res)
-{
-    gazeHitPoint.x = req.gazeHitPoint.point.x;
-    gazeHitPoint.y = req.gazeHitPoint.point.y;
-    gazeHitPoint.z = req.gazeHitPoint.point.z;
-
-    radius = req.radius;
-
-    if (!isGazeInitialized)
-    {
-        isGazeInitialized = true;
-        ROS_INFO("First gaze is initialized");
-    }
-
-    segment();
-    ROS_INFO("New segmentation is published");
-
-    if (!cloud_segmented->points.empty()) {
-        res.success = true;
-    } else {
-        res.success = false;
-    }
-}
-
-void MinCutSegmentation::segment() {
-//    filter();
-
-    pass.setInputCloud(cloud_filtered);
-    pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.0, 1.0);
-    pass.filter(*indices);
-
-    seg.setInputCloud(cloud_filtered);
-    seg.setIndices(indices);
-
+    PointCloudT::Ptr foreground_points(new PointCloudT);
     foreground_points->clear();
-    cloud_segmented->clear();
     foreground_points->points.push_back(gazeHitPoint);
     seg.setForegroundPoints(foreground_points);
     seg.setSigma(0.01); // Default: 0.25 (should be chosen depending on cloud resolution)
-    seg.setRadius(radius); // Default: 4
+    seg.setRadius(radius);  // Default: 4
     seg.setNumberOfNeighbours(3); // Default: 14
     seg.setSourceWeight(1.25); // Default: 0.8
 
     std::vector<pcl::PointIndices> clusters;
     seg.extract (clusters);
 
-//    std::cout << "Maximum flow is " << seg.getMaxFlow() << std::endl;
-
     // Add points to a new cloud (clusters[0]: background, clusters[1]: object)
-    for (std::vector<int>::const_iterator point = clusters[1].indices.begin(); point != clusters[1].indices.end(); point++)
-        cloud_segmented->points.push_back(cloud_filtered->points[*point]);
+    foreground_points->clear();
+    for (int indice : clusters[1].indices) {
+        foreground_points->points.push_back(cloud_segmented->points[indice]);
+    }
+    cloud_segmented.swap(foreground_points);
+    cloud_segmented->header = foreground_points->header;
 
     // Update cloud dimensions
     cloud_segmented->width = cloud_segmented->points.size();
     cloud_segmented->height = 1;
     cloud_segmented->is_dense = true;
 
-//    cloud_segmented = seg.getColoredCloud();
-//    cloud_segmented->header = cloud_incoming->header; // Workaround...
+    // Enable to show both, FG (white) and BG (red)
+    if (show_background) {
+        cloud_segmented = seg.getColoredCloud();
+        cloud_segmented->header = cloud_incoming->header;
+    }
 }

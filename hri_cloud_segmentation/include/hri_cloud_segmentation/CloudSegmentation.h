@@ -7,6 +7,10 @@
 
 #include "hri_cloud_segmentation/Segment.h"
 #include <geometry_msgs/PointStamped.h>
+
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
 #include <vector>
@@ -30,60 +34,31 @@ public:
     typedef pcl::PointXYZRGB PointT;
     typedef pcl::PointCloud<PointT> PointCloudT;
     PointCloudT::Ptr cloud_segmented;
+
     void callback_cloud(PointCloudT::ConstPtr const & msg);
-    virtual bool isInitialized() const = 0;
-    virtual void segment() = 0;
-//    pcl::BoundingBoxXYZ bounding_box;
-
-protected:
-    static bool isCloudInitialized;
-    PointCloudT::ConstPtr cloud_incoming;
-    PointCloudT::Ptr cloud_filtered;
-
-    // Voxel filter
-    pcl::VoxelGrid<PointT> voxel_filter;
-    void filter();
-
-    // Bounding box
-//    void CalcBoundingBox();
-};
-
-
-
-class PlanarSegmentation: public CloudSegmentation
-{
-public:
-    PlanarSegmentation();
-    inline bool isInitialized() const { return isCloudInitialized;}
-    void segment();
-
-private:
-    pcl::SACSegmentation<PointT> seg;
-    pcl::ModelCoefficients::Ptr coefficients;
-    pcl::PointIndices::Ptr inliers;
-    pcl::ExtractIndices<PointT> extract;
-    PointCloudT::Ptr cloud_extracted;
-};
-
-
-
-class MinCutSegmentation: public CloudSegmentation
-{
-public:
-    MinCutSegmentation();
+    void callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg);
     inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized;}
-    bool callback_gaze(hri_cloud_segmentation::Segment::Request &req,
-                       hri_cloud_segmentation::Segment::Response &res);
-    void segment();
+
+    void pass_through_filter();
+    void voxel_filter();
+    void planar_segmentation();
+    void min_cut_segmentation(double radius, bool show_background = false);
+//    pcl::BoundingBoxXYZ bounding_box;
 
 private:
     PointT gazeHitPoint;
+    PointCloudT::ConstPtr cloud_incoming;
+
+    bool isCloudInitialized = false;
     bool isGazeInitialized = false;
-    pcl::IndicesPtr indices;
-    pcl::PassThrough<PointT> pass;
-    pcl::MinCutSegmentation<PointT> seg;
-    pcl::PointCloud<PointT>::Ptr foreground_points;
-    float radius = 0.05f;
+
+    std::string target_frame;
+    tf2_ros::Buffer tf_buffer;
+    tf2_ros::TransformListener tf_listener;
+    geometry_msgs::TransformStamped transformStamped;
+
+    // Bounding box
+//    void CalcBoundingBox();
 };
 
 #endif //HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H
