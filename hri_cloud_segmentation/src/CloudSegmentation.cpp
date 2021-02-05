@@ -83,28 +83,14 @@ void CloudSegmentation::voxel_filter() {
     voxel_grid.filter(*cloud_segmented);
 }
 
-/*void CloudSegmentation::CalcBoundingBox() {
-    PointT minPoint, maxPoint;
-    pcl::getMinMax3D(*cloud_segmented, minPoint, maxPoint);
-//    bounding_box.x = (minPoint.x + maxPoint.x) / 2;
-//    bounding_box.y = (minPoint.y + maxPoint.y) / 2;
-//    bounding_box.z = (minPoint.z + maxPoint.z) / 2;
-    bounding_box.width = maxPoint.x - minPoint.x;
-    bounding_box.height = maxPoint.y - minPoint.y;
-    bounding_box.depth = maxPoint.z - minPoint.z;
-}*/
-
 
 void CloudSegmentation::planar_segmentation(double angle) {
-    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients());
-    pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
-    pcl::ExtractIndices<PointT> extract;
     pcl::SACSegmentation<PointT> seg;
-
     seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(500);
     seg.setDistanceThreshold(0.005);
+    seg.setInputCloud(cloud_segmented);
     seg.setOptimizeCoefficients (true); // Optional
 
     Eigen::Vector3f axis = Eigen::Vector3f(0.0f, 0.0f, 1.0f);
@@ -116,10 +102,12 @@ void CloudSegmentation::planar_segmentation(double angle) {
     seg.setAxis(axis.normalized());
     seg.setEpsAngle(angle * (M_PI/180.0f) );
 
-    seg.setInputCloud(cloud_segmented);
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients());
     seg.segment(*inliers, *coefficients);
 
     // Extract the inliers
+    pcl::ExtractIndices<PointT> extract;
     extract.setInputCloud(cloud_segmented);
     extract.setIndices(inliers);
     extract.setNegative(true);
@@ -162,3 +150,61 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
         cloud_segmented->header = cloud_incoming->header;
     }
 }
+
+
+void CloudSegmentation::clustering() {
+    // Search for the closest point in point cloud
+    pcl::KdTreeFLANN<PointT> kdtree_closest_point;
+    kdtree_closest_point.setInputCloud(cloud_segmented);
+    int K = 1;
+    std::vector<int> pointIdxNKNSearch(K);
+    std::vector<float> pointNKNSquaredDistance;
+    kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
+
+    // Cluster the point cloud
+    pcl::search::KdTree<PointT>::Ptr kdtree_cluster(new pcl::search::KdTree<PointT>);
+    kdtree_cluster->setInputCloud(cloud_segmented);
+
+    pcl::EuclideanClusterExtraction<PointT> ec;
+    ec.setClusterTolerance(0.01);
+    ec.setMinClusterSize(1000);
+    ec.setMaxClusterSize(99999000);
+    ec.setSearchMethod(kdtree_cluster);
+    ec.setInputCloud(cloud_segmented);
+
+    std::vector<pcl::PointIndices> clusters;
+    ec.extract(clusters);
+
+    // Find closes cluster and add points to a new cloud (clusters[i] is i-th cluster)
+    PointCloudT::Ptr foreground_points(new PointCloudT);
+    foreground_points->clear();
+    for (const auto & cluster : clusters)
+    {
+        if (find(cluster.indices.begin(), cluster.indices.end(), pointIdxNKNSearch[0]) != cluster.indices.end())
+        {
+            for (int indice : cluster.indices)
+            {
+                foreground_points->points.push_back(cloud_segmented->points[indice]);
+            }
+            break;
+        }
+    }
+    cloud_segmented.swap(foreground_points);
+    cloud_segmented->header = foreground_points->header;
+
+    // Update cloud dimensions
+    cloud_segmented->width = cloud_segmented->points.size();
+    cloud_segmented->height = 1;
+    cloud_segmented->is_dense = true;
+}
+
+/*void CloudSegmentation::calc_bounding_box() {
+    PointT minPoint, maxPoint;
+    pcl::getMinMax3D(*cloud_segmented, minPoint, maxPoint);
+//    bounding_box.x = (minPoint.x + maxPoint.x) / 2;
+//    bounding_box.y = (minPoint.y + maxPoint.y) / 2;
+//    bounding_box.z = (minPoint.z + maxPoint.z) / 2;
+    bounding_box.width = maxPoint.x - minPoint.x;
+    bounding_box.height = maxPoint.y - minPoint.y;
+    bounding_box.depth = maxPoint.z - minPoint.z;
+}*/

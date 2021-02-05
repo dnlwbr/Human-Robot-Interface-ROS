@@ -19,12 +19,16 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
 
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/segmentation/min_cut_segmentation.h>
-
 #include <pcl/ModelCoefficients.h>
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
+
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/min_cut_segmentation.h>
+#include <pcl/segmentation/extract_clusters.h>
+
+#include <pcl/search/search.h>
+#include <pcl/search/kdtree.h>
 
 
 class CloudSegmentation
@@ -44,6 +48,8 @@ public:
     void voxel_filter();
     void planar_segmentation(double angle = 0);
     void min_cut_segmentation(double radius, bool show_background = false);
+    void clustering();
+
 //    pcl::BoundingBoxXYZ bounding_box;
 
 private:
@@ -60,7 +66,7 @@ private:
     geometry_msgs::TransformStamped transformStamped;
 
     // Bounding box
-//    void CalcBoundingBox();
+//    void calc_bounding_box();
 };
 
 #endif //HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H
