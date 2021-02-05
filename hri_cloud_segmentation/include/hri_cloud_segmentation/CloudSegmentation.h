@@ -37,11 +37,12 @@ public:
 
     void callback_cloud(PointCloudT::ConstPtr const & msg);
     void callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg);
-    inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized;}
+    void initialize_transform(const std::string& source_frame);
+    inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized && isTransformInitialized;}
 
     void pass_through_filter();
     void voxel_filter();
-    void planar_segmentation();
+    void planar_segmentation(double angle = 0);
     void min_cut_segmentation(double radius, bool show_background = false);
 //    pcl::BoundingBoxXYZ bounding_box;
 
@@ -51,6 +52,7 @@ private:
 
     bool isCloudInitialized = false;
     bool isGazeInitialized = false;
+    bool isTransformInitialized = false;
 
     std::string target_frame;
     tf2_ros::Buffer tf_buffer;

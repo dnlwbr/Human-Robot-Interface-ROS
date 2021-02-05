@@ -33,31 +33,33 @@ void CloudSegmentation::callback_gaze(geometry_msgs::PointStamped::ConstPtr cons
     if (!isCloudInitialized)
         return;
 
-    if (msg->header.frame_id != target_frame) {
-        try{
-            transformStamped = tf_buffer.lookupTransform(target_frame, msg->header.frame_id, ros::Time(0), ros::Duration(1.0));
-        }
-        catch (tf2::TransformException &ex) {
-            ROS_WARN("Failure %s\n", ex.what());
-        }
-
-        geometry_msgs::PointStamped msg_transformed;
+    if (!isTransformInitialized) {
+        initialize_transform(msg->header.frame_id);
+    }
+    // Check again
+    if (isTransformInitialized) {
+        geometry_msgs::PointStamped msg_transformed = *msg;
         tf2::doTransform(*msg, msg_transformed, transformStamped);
-
         gazeHitPoint.x = msg_transformed.point.x;
         gazeHitPoint.y = msg_transformed.point.y;
         gazeHitPoint.z = msg_transformed.point.z;
-    }
-    else {
-        gazeHitPoint.x = msg->point.x;
-        gazeHitPoint.y = msg->point.y;
-        gazeHitPoint.z = msg->point.z;
-    }
 
-    if (!isGazeInitialized)
-    {
-        isGazeInitialized = true;
-        ROS_INFO("First gaze is initialized");
+        if (!isGazeInitialized) {
+            isGazeInitialized = true;
+            ROS_INFO("First gaze is initialized");
+        }
+    }
+}
+
+
+void CloudSegmentation::initialize_transform(const std::string& source_frame) {
+    try{
+        transformStamped = tf_buffer.lookupTransform(target_frame, source_frame, ros::Time(0), ros::Duration(1.0));
+        isTransformInitialized = true;
+        ROS_INFO("Transformation is initialized");
+    }
+    catch (tf2::TransformException &ex) {
+        ROS_WARN("Failure: %s", ex.what());
     }
 }
 
@@ -93,36 +95,35 @@ void CloudSegmentation::voxel_filter() {
 }*/
 
 
-void CloudSegmentation::planar_segmentation() {
+void CloudSegmentation::planar_segmentation(double angle) {
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients());
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
     pcl::ExtractIndices<PointT> extract;
     pcl::SACSegmentation<PointT> seg;
 
-    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setMaxIterations(1000);
-    seg.setDistanceThreshold(0.01);
+    seg.setMaxIterations(500);
+    seg.setDistanceThreshold(0.005);
     seg.setOptimizeCoefficients (true); // Optional
 
-    int i = 0, nr_points = (int) cloud_segmented->size();
-    // While 30% of the original cloud is still there
-    while (cloud_segmented->size() > 0.5 * nr_points) {
-        // Segment the largest planar component from the remaining cloud
-        seg.setInputCloud(cloud_segmented);
-        seg.segment(*inliers, *coefficients);
-        if (inliers->indices.empty()) {
-            ROS_DEBUG_STREAM("Could not estimate a planar model for the given dataset.");
-            break;
-        }
+    Eigen::Vector3f axis = Eigen::Vector3f(0.0f, 0.0f, 1.0f);
+    Eigen::Quaternionf rotation = Eigen::Quaternionf(transformStamped.transform.rotation.w,
+                                                     transformStamped.transform.rotation.x,
+                                                     transformStamped.transform.rotation.y,
+                                                     transformStamped.transform.rotation.z);
+    axis = rotation.inverse() * axis;
+    seg.setAxis(axis.normalized());
+    seg.setEpsAngle(angle * (M_PI/180.0f) );
 
-        // Extract the inliers
-        extract.setInputCloud(cloud_segmented);
-        extract.setIndices(inliers);
-        extract.setNegative(true);
-        extract.filter(*cloud_segmented);
-        i++;
-    }
+    seg.setInputCloud(cloud_segmented);
+    seg.segment(*inliers, *coefficients);
+
+    // Extract the inliers
+    extract.setInputCloud(cloud_segmented);
+    extract.setIndices(inliers);
+    extract.setNegative(true);
+    extract.filter(*cloud_segmented);
 }
 
 
