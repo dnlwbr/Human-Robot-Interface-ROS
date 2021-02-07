@@ -7,17 +7,25 @@
 
 #include "hri_cloud_segmentation/Segment.h"
 #include <geometry_msgs/PointStamped.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <vision_msgs/Detection3D.h>
 
+#include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2/transform_datatypes.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <pcl_ros/point_cloud.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/common/common.h>
 #include <pcl/point_types.h>
 #include <vector>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/crop_box.h>
 
 #include <pcl/ModelCoefficients.h>
 #include <pcl/sample_consensus/method_types.h>
@@ -50,7 +58,9 @@ public:
     void min_cut_segmentation(double radius, bool show_background = false);
     void clustering();
 
-//    pcl::BoundingBoxXYZ bounding_box;
+    vision_msgs::Detection3D object;
+    void calc_bounding_box();
+    void crop_cloud_to_bb();
 
 private:
     PointT gazeHitPoint;
@@ -63,10 +73,7 @@ private:
     std::string target_frame;
     tf2_ros::Buffer tf_buffer;
     tf2_ros::TransformListener tf_listener;
-    geometry_msgs::TransformStamped transformStamped;
-
-    // Bounding box
-//    void calc_bounding_box();
+    geometry_msgs::TransformStamped unity_origin_to_rgb_camera_link;
 };
 
 #endif //HRI_CLOUD_SEGMENTATION_CLOUDSEGMENTATION_H

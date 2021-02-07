@@ -13,24 +13,32 @@ int main (int argc, char** argv)
     ros::init(argc, argv, "hri_cloud_segmentation");
     ros::NodeHandle n;
     CloudSegmentation seg;
-    ROS_INFO("Subscribing to /points2");
-    ros::Subscriber sub_cloud = n.subscribe<CloudSegmentation::PointCloudT>("/points2", 1, &CloudSegmentation::callback_cloud, &seg);
-    ROS_INFO("Subscribing to /hololens2/gaze/hitpoint");
-    ros::Subscriber sub_gaze = n.subscribe<geometry_msgs::PointStamped>("/hololens2/gaze/hitpoint", 1, &CloudSegmentation::callback_gaze, &seg);
-    ROS_INFO("Publisher set to /points2/segmented");
-    ros::Publisher pub = n.advertise<CloudSegmentation::PointCloudT>("/points2/segmented", 1);
+
+    std::string topic = "/points2";
+    ros::Subscriber sub_cloud = n.subscribe<CloudSegmentation::PointCloudT>(topic, 1, &CloudSegmentation::callback_cloud, &seg);
+    ROS_INFO("Subscribing to %s", topic.c_str());
+
+    topic = "/hololens2/gaze/hitpoint";
+    ros::Subscriber sub_gaze = n.subscribe<geometry_msgs::PointStamped>(topic, 1, &CloudSegmentation::callback_gaze, &seg);
+    ROS_INFO("Subscribing to %s", topic.c_str());
+
+    topic = "/points2/segmented";
+    ros::Publisher pub_segmented_cloud = n.advertise<CloudSegmentation::PointCloudT>(topic, 1);
+    ROS_INFO("Publisher set to %s", topic.c_str());
+
+    topic = "/points2/bounding_box_3d";
+    ros::Publisher pub_box = n.advertise<vision_msgs::Detection3D>(topic, 1);
+    ROS_INFO("Publisher set to %s", topic.c_str());
 
     //ros::ServiceServer service = n.advertiseService("/hri_cloud_segmentation/Segment", &MinCutSegmentation::callback_gaze, dynamic_cast<MinCutSegmentation*>(&seg));
 
-    ROS_INFO("Wait for initialization");
+    ROS_INFO("Waiting for initialization...");
     ros::Rate loop_rate(5);
 
     while (!seg.isInitialized()) {
         ros::spinOnce();
         loop_rate.sleep();
     }
-
-    ROS_INFO("Publishing to /points2/segmented");
 
     while (ros::ok())
     {
@@ -39,7 +47,9 @@ int main (int argc, char** argv)
         seg.planar_segmentation(30); // If epsilon angle equals 0 the axis is ignored.
         //seg.min_cut_segmentation(0.1, false);
         seg.clustering();
-        pub.publish(*seg.cloud_segmented);
+        seg.calc_bounding_box();
+        pub_box.publish(seg.object);
+        pub_segmented_cloud.publish(*seg.cloud_segmented);
         ros::spinOnce();    // process callbacks
         loop_rate.sleep();
     }
