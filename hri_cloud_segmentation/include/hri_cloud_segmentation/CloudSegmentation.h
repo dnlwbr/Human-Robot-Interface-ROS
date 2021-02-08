@@ -9,6 +9,7 @@
 #include <geometry_msgs/PointStamped.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <vision_msgs/Detection3D.h>
+#include <visualization_msgs/Marker.h>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -59,6 +60,7 @@ public:
     void clustering();
 
     vision_msgs::Detection3D object;
+    visualization_msgs::Marker marker;
     void calc_bounding_box();
     void crop_cloud_to_bb();
 

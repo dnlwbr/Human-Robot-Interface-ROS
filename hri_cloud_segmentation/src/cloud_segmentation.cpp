@@ -24,11 +24,15 @@ int main (int argc, char** argv)
 
     topic = "/points2/segmented";
     ros::Publisher pub_segmented_cloud = n.advertise<CloudSegmentation::PointCloudT>(topic, 1);
-    ROS_INFO("Publisher set to %s", topic.c_str());
+    ROS_INFO("Publisher for segmented cloud set to %s", topic.c_str());
 
     topic = "/points2/bounding_box_3d";
     ros::Publisher pub_box = n.advertise<vision_msgs::Detection3D>(topic, 1);
-    ROS_INFO("Publisher set to %s", topic.c_str());
+    ROS_INFO("Publisher for objects set to %s", topic.c_str());
+
+    topic = "/hri_cloud_segmentation/visualization_marker";
+    ros::Publisher pub_viz_marker = n.advertise<visualization_msgs::Marker>(topic, 1);
+    ROS_INFO("Publisher for visualization marker set to %s", topic.c_str());
 
     //ros::ServiceServer service = n.advertiseService("/hri_cloud_segmentation/Segment", &MinCutSegmentation::callback_gaze, dynamic_cast<MinCutSegmentation*>(&seg));
 
@@ -48,6 +52,7 @@ int main (int argc, char** argv)
         //seg.min_cut_segmentation(0.1, false);
         seg.clustering();
         seg.calc_bounding_box();
+        pub_viz_marker.publish(seg.marker);
         pub_box.publish(seg.object);
         pub_segmented_cloud.publish(*seg.cloud_segmented);
         ros::spinOnce();    // process callbacks

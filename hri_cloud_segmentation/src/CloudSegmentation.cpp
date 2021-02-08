@@ -203,12 +203,12 @@ void CloudSegmentation::calc_bounding_box() {
     geometry_msgs::TransformStamped cloud_to_camera_base_leveled;
     geometry_msgs::TransformStamped camera_base_leveled_to_cloud;
     try{
-        cloud_to_camera_base_leveled = tf_buffer.lookupTransform(cloud_segmented->header.frame_id,
-                                                                    "camera_base_leveled",
-                                                                    ros::Time(0),
-                                                                    ros::Duration(1.0));
-        camera_base_leveled_to_cloud = tf_buffer.lookupTransform("camera_base_leveled",
+        cloud_to_camera_base_leveled = tf_buffer.lookupTransform("camera_base_leveled",
                                                                  cloud_segmented->header.frame_id,
+                                                                 ros::Time(0),
+                                                                 ros::Duration(1.0));
+        camera_base_leveled_to_cloud = tf_buffer.lookupTransform(cloud_segmented->header.frame_id,
+                                                                 "camera_base_leveled",
                                                                  ros::Time(0),
                                                                  ros::Duration(1.0));
     }
@@ -245,6 +245,21 @@ void CloudSegmentation::calc_bounding_box() {
     // Fill header
     object.header.stamp = ros::Time::now();
     object.header.frame_id = cloud_segmented->header.frame_id;
+
+    // Marker for visualization in RVIZ
+    marker.header.frame_id = cloud_segmented->header.frame_id;
+    marker.header.stamp = ros::Time();
+    marker.ns = "hri_cloud_segmentation";
+    marker.id = 0;
+    marker.type = visualization_msgs::Marker::CUBE;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.pose.position = center.position;
+    marker.pose.orientation = center.orientation;
+    marker.scale = object.bbox.size;
+    marker.color.a = 0.7; // alpha value
+    marker.color.r = 0.0;
+    marker.color.g = 1.0;
+    marker.color.b = 0.0;
 }
 
 void CloudSegmentation::crop_cloud_to_bb() {
