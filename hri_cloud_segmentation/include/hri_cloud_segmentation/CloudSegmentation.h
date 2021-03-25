@@ -35,6 +35,8 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/min_cut_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/euclidean_cluster_comparator.h>
+#include <pcl/segmentation/organized_connected_component_segmentation.h>
 
 #include <pcl/search/search.h>
 #include <pcl/search/kdtree.h>
@@ -53,6 +55,8 @@ public:
     void initialize_transform(const std::string& source_frame);
     inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized && isTransformInitialized;}
 
+    void UpdateProperties(PointCloudT &cloud);
+
     void pass_through_filter();
     void voxel_filter();
     void planar_segmentation(double angle = 0);
@@ -67,6 +71,7 @@ public:
 private:
     PointT gazeHitPoint;
     PointCloudT::ConstPtr cloud_incoming;
+    pcl::IndicesConstPtr background_indices;
 
     bool isCloudInitialized = false;
     bool isGazeInitialized = false;

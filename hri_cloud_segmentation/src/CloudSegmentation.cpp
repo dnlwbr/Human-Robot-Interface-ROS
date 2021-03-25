@@ -9,7 +9,6 @@ CloudSegmentation::CloudSegmentation()
     : cloud_incoming(new PointCloudT),
       cloud_segmented(new PointCloudT),
       tf_listener(tf_buffer) {
-    //    bounding_box = pcl::BoundingBoxXYZ();
 }
 
 
@@ -64,13 +63,29 @@ void CloudSegmentation::initialize_transform(const std::string& source_frame) {
 }
 
 
+void CloudSegmentation::UpdateProperties(PointCloudT &cloud) {
+    if (cloud.isOrganized()) {
+        cloud.is_dense = false; // Cloud contains NaN (or Inf) values
+    }
+    else
+    {
+        cloud.width = cloud_segmented->points.size();
+        cloud.height = 1;
+        cloud.is_dense = true;
+    }
+}
+
+
 void CloudSegmentation::pass_through_filter() {
     PointCloudT::Ptr cloud_filtered(new PointCloudT);
     pcl::PassThrough<PointT> pass;
     pass.setInputCloud(cloud_incoming);
     pass.setFilterFieldName("z");
     pass.setFilterLimits(0.0, 3.0);
+    pass.setKeepOrganized(true);
     pass.filter(*cloud_segmented);
+
+    UpdateProperties(*cloud_segmented);
 }
 
 
@@ -81,6 +96,8 @@ void CloudSegmentation::voxel_filter() {
     voxel_grid.setLeafSize(0.003f, 0.003f, 0.003f);
     voxel_grid.setInputCloud(cloud_segmented);
     voxel_grid.filter(*cloud_segmented);
+
+    UpdateProperties(*cloud_segmented);
 }
 
 
@@ -107,11 +124,17 @@ void CloudSegmentation::planar_segmentation(double angle) {
     seg.segment(*inliers, *coefficients);
 
     // Extract the inliers
-    pcl::ExtractIndices<PointT> extract;
+    pcl::ExtractIndices<PointT> extract(true); // Initializing with true will allow getRemovedIndices()
     extract.setInputCloud(cloud_segmented);
     extract.setIndices(inliers);
+
     extract.setNegative(true);
+    if (cloud_segmented->isOrganized()) {
+        extract.setKeepOrganized(true);
+    }
     extract.filter(*cloud_segmented);
+    background_indices = extract.getRemovedIndices();
+    UpdateProperties(*cloud_segmented);
 }
 
 
@@ -139,10 +162,7 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
     cloud_segmented.swap(foreground_points);
     cloud_segmented->header = foreground_points->header;
 
-    // Update cloud dimensions
-    cloud_segmented->width = cloud_segmented->points.size();
-    cloud_segmented->height = 1;
-    cloud_segmented->is_dense = true;
+    UpdateProperties(*cloud_segmented);
 
     // Enable to show both, FG (white) and BG (red)
     if (show_background) {
@@ -161,41 +181,63 @@ void CloudSegmentation::clustering() {
     std::vector<float> pointNKNSquaredDistance;
     kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
 
-    // Cluster the point cloud
-    pcl::search::KdTree<PointT>::Ptr kdtree_cluster(new pcl::search::KdTree<PointT>);
-    kdtree_cluster->setInputCloud(cloud_segmented);
-
-    pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.01);
-    ec.setMinClusterSize(1000);
-    ec.setMaxClusterSize(99999000);
-    ec.setSearchMethod(kdtree_cluster);
-    ec.setInputCloud(cloud_segmented);
-
     std::vector<pcl::PointIndices> clusters;
-    ec.extract(clusters);
+    pcl::PointIndices::Ptr clusterPtr(new pcl::PointIndices());  // Pointer to the cluster of the object
+    // Prefer a faster method if the cloud is organized, over EuclidanClusterExtraction
+    if (cloud_segmented->isOrganized()) {
+        pcl::EuclideanClusterComparator<PointT , pcl::Normal, pcl::Label>::Ptr comparator(new pcl::EuclideanClusterComparator<PointT, pcl::Normal, pcl::Label>());
+        comparator->setDistanceThreshold(0.005f,false);
+        comparator->setInputCloud(cloud_segmented);
+        // Set the entire scene to false, and the inliers of the objects located on top of the plane to true
+        pcl::Label l{}; l.label = 1;
+        pcl::PointCloud<pcl::Label>::Ptr scene(new pcl::PointCloud<pcl::Label>(cloud_segmented->width, cloud_segmented->height, l));
+        // Mask the objects that we want to split into clusters
+        for (const int &index : *background_indices)
+            scene->points[index].label = 0;
+        comparator->setLabels(scene);
 
-    // Find closes cluster and add points to a new cloud (clusters[i] is i-th cluster)
-    PointCloudT::Ptr foreground_points(new PointCloudT);
-    foreground_points->clear();
+        std::vector<bool> exclude_labels {true, false};
+        comparator->setExcludeLabels (exclude_labels);
+
+        pcl::OrganizedConnectedComponentSegmentation<PointT, pcl::Label> segmenter(comparator);
+        segmenter.setInputCloud(cloud_segmented);
+        pcl::PointCloud<pcl::Label> euclidean_labels;
+        segmenter.segment(euclidean_labels, clusters);
+    }
+    else
+    {
+        // Cluster the point cloud
+        pcl::search::KdTree<PointT>::Ptr kdtree_cluster(new pcl::search::KdTree<PointT>);
+        kdtree_cluster->setInputCloud(cloud_segmented);
+
+        pcl::EuclideanClusterExtraction<PointT> ec;
+        ec.setClusterTolerance(0.005);
+        ec.setMinClusterSize(1000);
+        ec.setMaxClusterSize(99999000);
+        ec.setSearchMethod(kdtree_cluster);
+        ec.setInputCloud(cloud_segmented);
+        ec.extract(clusters);
+    }
+
+    // For each cluster found
     for (const auto & cluster : clusters)
     {
-        if (find(cluster.indices.begin(), cluster.indices.end(), pointIdxNKNSearch[0]) != cluster.indices.end())
-        {
-            for (int indice : cluster.indices)
-            {
-                foreground_points->points.push_back(cloud_segmented->points[indice]);
-            }
+        // Check if point belongs to cluster (clusters[i] is i-th cluster)
+        if (find(cluster.indices.begin(), cluster.indices.end(), pointIdxNKNSearch[0]) != cluster.indices.end()) {
+            *clusterPtr = cluster;
             break;
         }
     }
-    cloud_segmented.swap(foreground_points);
-    cloud_segmented->header = foreground_points->header;
 
-    // Update cloud dimensions
-    cloud_segmented->width = cloud_segmented->points.size();
-    cloud_segmented->height = 1;
-    cloud_segmented->is_dense = true;
+    pcl::ExtractIndices<PointT> extract;
+    extract.setInputCloud(cloud_segmented);
+    extract.setIndices(clusterPtr);
+    extract.setNegative(false);
+    if (cloud_segmented->isOrganized()) {
+        extract.setKeepOrganized(true);
+    }
+    extract.filter(*cloud_segmented);
+    UpdateProperties(*cloud_segmented);
 }
 
 
@@ -284,5 +326,6 @@ void CloudSegmentation::crop_cloud_to_bb() {
 
     boxFilter.setInputCloud(cloud_incoming);
     boxFilter.filter(*cloud_segmented);
+    //?UpdateProperties(*cloud_segmented);
     //pcl::toROSMsg(*cloud_segmented, object.source_cloud);
 }
