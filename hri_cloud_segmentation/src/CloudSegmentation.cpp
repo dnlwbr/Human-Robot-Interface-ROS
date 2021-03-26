@@ -89,14 +89,42 @@ void CloudSegmentation::pass_through_filter() {
 }
 
 
-void CloudSegmentation::voxel_filter() {
+void CloudSegmentation::voxel_filter(bool keepOrganized) {
     // Filtering input scan to increase speed.
-    PointCloudT::Ptr cloud_filtered(new PointCloudT);
+    PointCloudT::Ptr cloud_voxel(new PointCloudT);
     pcl::VoxelGrid<PointT> voxel_grid;
     voxel_grid.setLeafSize(0.003f, 0.003f, 0.003f);
     voxel_grid.setInputCloud(cloud_segmented);
-    voxel_grid.filter(*cloud_segmented);
 
+    if (keepOrganized) {
+        voxel_grid.filter(*cloud_voxel);
+
+        // Search for the respective closest point in original cloud
+        pcl::KdTreeFLANN<PointT> kdtree_closest_point;
+        kdtree_closest_point.setInputCloud(cloud_segmented);
+        int K = 1;
+        std::vector<int> pointIdxNKNSearch(K);
+        std::vector<float> pointNKNSquaredDistance;
+        pcl::PointIndices::Ptr indicesPtr(new pcl::PointIndices());
+        for (auto & it : *cloud_voxel) {
+            kdtree_closest_point.nearestKSearch(it, K, pointIdxNKNSearch, pointNKNSquaredDistance);
+            indicesPtr->indices.push_back(pointIdxNKNSearch[0]);
+        }
+
+        // Extract closest point from cloud
+        pcl::ExtractIndices<PointT> extract;
+        extract.setInputCloud(cloud_segmented);
+        extract.setIndices(indicesPtr);
+        extract.setNegative(false);
+        if (cloud_segmented->isOrganized()) {
+            extract.setKeepOrganized(true);
+        }
+        extract.filter(*cloud_segmented);
+    }
+    else
+    {
+        voxel_grid.filter(*cloud_segmented);
+    }
     UpdateProperties(*cloud_segmented);
 }
 

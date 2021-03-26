@@ -47,8 +47,7 @@ int main (int argc, char** argv)
     while (ros::ok())
     {
         seg.pass_through_filter();
-        seg.voxel_filter();
-        //seg.downsample();
+        seg.voxel_filter(true);
         seg.planar_segmentation(30); // If epsilon angle equals 0 the axis is ignored.
         //seg.min_cut_segmentation(0.1, false);
         seg.clustering();

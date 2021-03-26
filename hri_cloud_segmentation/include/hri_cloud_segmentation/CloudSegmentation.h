@@ -58,7 +58,7 @@ public:
     void UpdateProperties(PointCloudT &cloud);
 
     void pass_through_filter();
-    void voxel_filter();
+    void voxel_filter(bool keepOrganized = false);
     void downsample();
     void planar_segmentation(double angle = 0);
     void min_cut_segmentation(double radius, bool show_background = false);
