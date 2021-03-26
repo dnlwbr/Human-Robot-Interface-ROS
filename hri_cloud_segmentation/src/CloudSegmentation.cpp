@@ -101,6 +101,24 @@ void CloudSegmentation::voxel_filter() {
 }
 
 
+void CloudSegmentation::downsample() {
+    int scale = 20;
+    pcl::PointIndices::Ptr indicesPtr(new pcl::PointIndices());
+    for (int i = 0; i < cloud_segmented->size()/scale; i++){
+        indicesPtr->indices.push_back(i * scale);
+    }
+    pcl::ExtractIndices<PointT> extract;
+    extract.setInputCloud(cloud_segmented);
+    extract.setIndices(indicesPtr);
+    extract.setNegative(false);
+    if (cloud_segmented->isOrganized()) {
+        extract.setKeepOrganized(true);
+    }
+    extract.filter(*cloud_segmented);
+    UpdateProperties(*cloud_segmented);
+}
+
+
 void CloudSegmentation::planar_segmentation(double angle) {
     pcl::SACSegmentation<PointT> seg;
     seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
