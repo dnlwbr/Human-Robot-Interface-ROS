@@ -57,12 +57,12 @@ public:
 
     void UpdateProperties(PointCloudT &cloud);
 
-    void pass_through_filter();
+    void pass_through_filter(bool keepOrganized = false);
     void voxel_filter(bool keepOrganized = false);
     void downsample();
-    void planar_segmentation(double angle = 0);
+    void planar_segmentation(double angle = 0, bool keepOrganized = false);
     void min_cut_segmentation(double radius, bool show_background = false);
-    void clustering();
+    void clustering(bool keepOrganized = false);
 
     vision_msgs::Detection3D object;
     visualization_msgs::Marker marker;
@@ -72,7 +72,6 @@ public:
 private:
     PointT gazeHitPoint;
     PointCloudT::ConstPtr cloud_incoming;
-    pcl::IndicesConstPtr background_indices;
 
     bool isCloudInitialized = false;
     bool isGazeInitialized = false;

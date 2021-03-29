@@ -37,7 +37,7 @@ int main (int argc, char** argv)
     //ros::ServiceServer service = n.advertiseService("/hri_cloud_segmentation/Segment", &MinCutSegmentation::callback_gaze, dynamic_cast<MinCutSegmentation*>(&seg));
 
     ROS_INFO("Waiting for initialization...");
-    ros::Rate loop_rate(5);
+    ros::Rate loop_rate(30);
 
     while (!seg.isInitialized()) {
         ros::spinOnce();
@@ -46,11 +46,11 @@ int main (int argc, char** argv)
 
     while (ros::ok())
     {
-        seg.pass_through_filter();
-        seg.voxel_filter(true);
-        seg.planar_segmentation(30); // If epsilon angle equals 0 the axis is ignored.
+        seg.pass_through_filter(false);
+        seg.voxel_filter(false);
+        seg.planar_segmentation(30, false); // If epsilon angle equals 0 the axis is ignored.
         //seg.min_cut_segmentation(0.1, false);
-        seg.clustering();
+        seg.clustering(false);
         seg.calc_bounding_box();
         pub_viz_marker.publish(seg.marker);
         pub_box.publish(seg.object);
