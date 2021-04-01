@@ -8,6 +8,9 @@
 CloudSegmentation::CloudSegmentation()
     : cloud_incoming(new PointCloudT),
       cloud_segmented(new PointCloudT),
+      rgb_image(new cv_bridge::CvImage),
+      rgb_image_cropped_msg(new sensor_msgs::Image),
+      rgb_camera_info(new sensor_msgs::CameraInfo),
       tf_listener(tf_buffer) {
 }
 
@@ -47,6 +50,28 @@ void CloudSegmentation::callback_gaze(geometry_msgs::PointStamped::ConstPtr cons
             isGazeInitialized = true;
             ROS_INFO("First gaze is initialized");
         }
+    }
+}
+
+
+void CloudSegmentation::callback_rgbImage(sensor_msgs::Image::ConstPtr const & img_msg, sensor_msgs::CameraInfo::ConstPtr const & info_msg)
+{
+    // Convert message to CvImage
+    try
+    {
+        rgb_image = cv_bridge::toCvCopy(img_msg, "bgr8");
+        *rgb_camera_info = *info_msg;
+
+        if (!isRGBImageInitialized) {
+            isRGBImageInitialized = true;
+            ROS_INFO("First RGB image is initialized");
+            ROS_INFO("Camera Info received");
+        }
+    }
+    catch (cv_bridge::Exception& e)
+    {
+        // ROS_ERROR("Could not convert from '%s' to 'bgr8'", img_msg->encoding.c_str());
+        ROS_ERROR("cv_bridge exception: %s", e.what());
     }
 }
 
@@ -130,6 +155,7 @@ void CloudSegmentation::voxel_filter(bool keepOrganized) {
 }
 
 
+[[deprecated("Use voxel_grid instead, which provides better results.")]]
 void CloudSegmentation::downsample() {
     int scale = 20;
     pcl::PointIndices::Ptr indicesPtr(new pcl::PointIndices());
@@ -313,17 +339,19 @@ void CloudSegmentation::calc_bounding_box() {
     tf2::doTransform(cloud_segmented_msg, cloud_segmented_leveled_msg, cloud_to_camera_base_leveled);
     pcl::fromROSMsg(cloud_segmented_leveled_msg, *cloud_segmented_leveled);
 
-    PointT minPoint, maxPoint;
-    pcl::getMinMax3D(*cloud_segmented_leveled, minPoint, maxPoint);
+    PointT minPoint3D, maxPoint3D;
+    pcl::getMinMax3D(*cloud_segmented_leveled, minPoint3D, maxPoint3D);
 
-    object.bbox.size.x = maxPoint.x - minPoint.x;
-    object.bbox.size.y = maxPoint.y - minPoint.y;
-    object.bbox.size.z = maxPoint.z - minPoint.z;
+    // Calculate 3D bounding box
+
+    object.bbox.size.x = maxPoint3D.x - minPoint3D.x;
+    object.bbox.size.y = maxPoint3D.y - minPoint3D.y;
+    object.bbox.size.z = maxPoint3D.z - minPoint3D.z;
 
     geometry_msgs::Pose center;
-    center.position.x = (minPoint.x + maxPoint.x) / 2;
-    center.position.y = (minPoint.y + maxPoint.y) / 2;
-    center.position.z = (minPoint.z + maxPoint.z) / 2;
+    center.position.x = (minPoint3D.x + maxPoint3D.x) / 2;
+    center.position.y = (minPoint3D.y + maxPoint3D.y) / 2;
+    center.position.z = (minPoint3D.z + maxPoint3D.z) / 2;
     center.orientation.x = 0;
     center.orientation.y = 0;
     center.orientation.z = 0;
@@ -334,12 +362,12 @@ void CloudSegmentation::calc_bounding_box() {
     pcl::toROSMsg(*cloud_segmented, object.source_cloud);
 
     // Fill header
-    object.header.stamp = ros::Time::now();
+    object.header.stamp = pcl_conversions::fromPCL(cloud_segmented->header.stamp);
     object.header.frame_id = cloud_segmented->header.frame_id;
 
     // Marker for visualization in RVIZ
     marker.header.frame_id = cloud_segmented->header.frame_id;
-    marker.header.stamp = ros::Time();
+    marker.header.stamp = pcl_conversions::fromPCL(cloud_segmented->header.stamp);
     marker.ns = "hri_cloud_segmentation";
     marker.id = 0;
     marker.type = visualization_msgs::Marker::CUBE;
@@ -351,6 +379,45 @@ void CloudSegmentation::calc_bounding_box() {
     marker.color.r = 0.0;
     marker.color.g = 1.0;
     marker.color.b = 0.0;
+
+    // Calculate 2D bounding box
+
+    std::vector<geometry_msgs::Point> corners;
+    geometry_msgs::Point pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8;
+    // Determine the coordinates of the corners of the 3D bounding box
+    pt1.x = minPoint3D.x; pt1.y = minPoint3D.y; pt1.z = minPoint3D.z; corners.push_back(pt1);
+    pt2.x = minPoint3D.x; pt2.y = minPoint3D.y; pt2.z = maxPoint3D.z; corners.push_back(pt2);
+    pt3.x = minPoint3D.x; pt3.y = maxPoint3D.y; pt3.z = minPoint3D.z; corners.push_back(pt3);
+    pt4.x = maxPoint3D.x; pt4.y = minPoint3D.y; pt4.z = minPoint3D.z; corners.push_back(pt4);
+    pt5.x = maxPoint3D.x; pt5.y = maxPoint3D.y; pt5.z = minPoint3D.z; corners.push_back(pt5);
+    pt6.x = maxPoint3D.x; pt6.y = minPoint3D.y; pt6.z = maxPoint3D.z; corners.push_back(pt6);
+    pt7.x = minPoint3D.x; pt7.y = maxPoint3D.y; pt7.z = maxPoint3D.z; corners.push_back(pt7);
+    pt8.x = maxPoint3D.x; pt8.y = maxPoint3D.y; pt8.z = maxPoint3D.z; corners.push_back(pt8);
+
+    image_geometry::PinholeCameraModel cam_model;
+    cam_model.fromCameraInfo(rgb_camera_info);
+    double inf = std::numeric_limits<double>::infinity();
+    cv::Point2d minPoint2D(inf, inf);
+    cv::Point2d maxPoint2D(-inf, -inf);
+    for (auto & corner : corners)
+    {
+        tf2::doTransform(corner, corner, camera_base_leveled_to_cloud);
+        cv::Point3d corner3D(corner.x,corner.y,corner.z);
+
+        // Project corner on 2D plane
+        cv::Point2d corner2D = cam_model.project3dToPixel(corner3D);
+
+        // Calculate 2D corners
+        if (corner2D.x < minPoint2D.x) { minPoint2D.x = corner2D.x; }
+        if (corner2D.x > maxPoint2D.x) { maxPoint2D.x = corner2D.x; }
+        if (corner2D.y < minPoint2D.y) { minPoint2D.y = corner2D.y; }
+        if (corner2D.y > maxPoint2D.y) { maxPoint2D.y = corner2D.y; }
+    }
+    if (minPoint2D.x < 0) { minPoint2D.x = 0; }
+    if (maxPoint2D.x > rgb_image->image.cols) { maxPoint2D.x = rgb_image->image.cols; }
+    if (minPoint2D.y < 0) { minPoint2D.y = 0; }
+    if (maxPoint2D.y > rgb_image->image.rows) { maxPoint2D.y = rgb_image->image.rows; }
+    bbox_2d.clear(); bbox_2d.push_back(minPoint2D); bbox_2d.push_back(maxPoint2D);
 }
 
 void CloudSegmentation::crop_cloud_to_bb() {
@@ -377,4 +444,21 @@ void CloudSegmentation::crop_cloud_to_bb() {
     boxFilter.filter(*cloud_segmented);
     //?UpdateProperties(*cloud_segmented);
     //pcl::toROSMsg(*cloud_segmented, object.source_cloud);
+}
+
+
+void CloudSegmentation::crop_image_to_bb() {
+    int x = (int)bbox_2d[0].x;
+    int y = (int)bbox_2d[0].y;
+    int width = (int)(bbox_2d[1].x - bbox_2d[0].x);
+    int height = (int)(bbox_2d[1].y - bbox_2d[0].y);
+
+    // Crop image to 2D bounding box
+    cv::Rect crop_region(x, y, width, height);
+    cv_bridge::CvImage rgb_image_cropped = *rgb_image;
+    rgb_image_cropped.image = rgb_image->image(crop_region);
+    rgb_image_cropped_msg = rgb_image_cropped.toImageMsg();
+
+    // Fill header
+    // CvImage is constructed with header from image message
 }

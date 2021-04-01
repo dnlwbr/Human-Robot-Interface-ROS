@@ -7,10 +7,13 @@
 
 #include "hri_cloud_segmentation/Segment.h"
 #include <geometry_msgs/PointStamped.h>
+#include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <vision_msgs/Detection3D.h>
 #include <visualization_msgs/Marker.h>
 
+#include <image_geometry/pinhole_camera_model.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/transform_datatypes.h>
@@ -41,6 +44,9 @@
 #include <pcl/search/search.h>
 #include <pcl/search/kdtree.h>
 
+#include<opencv2/opencv.hpp>
+#include <cv_bridge/cv_bridge.h>
+
 
 class CloudSegmentation
 {
@@ -49,11 +55,15 @@ public:
     typedef pcl::PointXYZRGB PointT;
     typedef pcl::PointCloud<PointT> PointCloudT;
     PointCloudT::Ptr cloud_segmented;
+    sensor_msgs::Image::Ptr rgb_image_cropped_msg;
+
 
     void callback_cloud(PointCloudT::ConstPtr const & msg);
     void callback_gaze(geometry_msgs::PointStamped::ConstPtr const & msg);
+    void callback_rgbImage(sensor_msgs::Image::ConstPtr const & img_msg, sensor_msgs::CameraInfo::ConstPtr const & info_msg);
     void initialize_transform(const std::string& source_frame);
-    inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized && isTransformInitialized;}
+    inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized && isTransformInitialized
+                                        && isRGBImageInitialized;}
 
     void UpdateProperties(PointCloudT &cloud);
 
@@ -68,13 +78,18 @@ public:
     visualization_msgs::Marker marker;
     void calc_bounding_box();
     void crop_cloud_to_bb();
+    void crop_image_to_bb();
 
 private:
     PointT gazeHitPoint;
     PointCloudT::ConstPtr cloud_incoming;
+    boost::shared_ptr<cv_bridge::CvImage> rgb_image;
+    sensor_msgs::CameraInfo::Ptr rgb_camera_info;
+    std::vector<cv::Point2d> bbox_2d;
 
     bool isCloudInitialized = false;
     bool isGazeInitialized = false;
+    bool isRGBImageInitialized = false;
     bool isTransformInitialized = false;
 
     std::string target_frame;
