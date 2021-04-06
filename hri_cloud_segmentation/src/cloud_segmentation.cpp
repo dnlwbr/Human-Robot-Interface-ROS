@@ -46,7 +46,7 @@ int main (int argc, char** argv)
     ros::Publisher pub_viz_marker = nh.advertise<visualization_msgs::Marker>(topic, 1);
     ROS_INFO("Publisher for visualization marker set to %s", topic.c_str());
 
-    topic = "/segmented/rgb_image_raw";
+    topic = "/segmented/image_rect_color";
     image_transport::Publisher pub_rgb_image = it.advertise(topic, 1);
     ROS_INFO("Publisher for cropped image set to %s", topic.c_str());
 
@@ -63,7 +63,7 @@ int main (int argc, char** argv)
     }
 
     ROS_INFO("---------------------");
-    ROS_INFO("Process...");
+    ROS_INFO("Processing...");
 
     while (ros::ok())
     {
