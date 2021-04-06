@@ -26,8 +26,8 @@ int main (int argc, char** argv)
     ros::Subscriber sub_gaze = nh.subscribe<geometry_msgs::PointStamped>(topic, 1, &CloudSegmentation::callback_gaze, &seg);
     ROS_INFO("Subscribing to %s", topic.c_str());
 
-    topic = "/rgb/image_raw";
-    //image_transport::Subscriber sub_rgbImage = it.subscribe(topic, 1, &CloudSegmentation::callback_rgbImage, &seg);
+    //topic = "/rgb/image_raw";
+    topic = "/rgb/image_rect_color";  // PinholeCameraModel::project3dToPixel outputs rectified pixel coordinates
     image_transport::CameraSubscriber sub_rgbImage = it.subscribeCamera(topic, 1, &CloudSegmentation::callback_rgbImage, &seg);
     ROS_INFO("Subscribing to %s", topic.c_str());
 
