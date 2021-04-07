@@ -380,43 +380,45 @@ void CloudSegmentation::calc_bounding_box() {
     marker.color.g = 1.0;
     marker.color.b = 0.0;
 
+
     // Calculate 2D bounding box
 
-    std::vector<geometry_msgs::Point> corners;
-    geometry_msgs::Point pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8;
-    // Determine the coordinates of the corners of the 3D bounding box
-    pt1.x = minPoint3D.x; pt1.y = minPoint3D.y; pt1.z = minPoint3D.z; corners.push_back(pt1);
-    pt2.x = minPoint3D.x; pt2.y = minPoint3D.y; pt2.z = maxPoint3D.z; corners.push_back(pt2);
-    pt3.x = minPoint3D.x; pt3.y = maxPoint3D.y; pt3.z = minPoint3D.z; corners.push_back(pt3);
-    pt4.x = maxPoint3D.x; pt4.y = minPoint3D.y; pt4.z = minPoint3D.z; corners.push_back(pt4);
-    pt5.x = maxPoint3D.x; pt5.y = maxPoint3D.y; pt5.z = minPoint3D.z; corners.push_back(pt5);
-    pt6.x = maxPoint3D.x; pt6.y = minPoint3D.y; pt6.z = maxPoint3D.z; corners.push_back(pt6);
-    pt7.x = minPoint3D.x; pt7.y = maxPoint3D.y; pt7.z = maxPoint3D.z; corners.push_back(pt7);
-    pt8.x = maxPoint3D.x; pt8.y = maxPoint3D.y; pt8.z = maxPoint3D.z; corners.push_back(pt8);
-
-    image_geometry::PinholeCameraModel cam_model;
-    cam_model.fromCameraInfo(rgb_camera_info);
     double inf = std::numeric_limits<double>::infinity();
     cv::Point2d minPoint2D(inf, inf);
     cv::Point2d maxPoint2D(-inf, -inf);
-    for (auto & corner : corners)
-    {
-        tf2::doTransform(corner, corner, camera_base_leveled_to_cloud);
-        cv::Point3d corner3D(corner.x,corner.y,corner.z);
 
-        // Project corner on 2D plane
-        cv::Point2d corner2D = cam_model.project3dToPixel(corner3D);
+    if (cloud_segmented->empty()) {
+        // If empty use full image
+        minPoint2D.x = 0;
+        minPoint2D.y = 0;
+        maxPoint2D.x = rgb_image->image.cols;
+        maxPoint2D.y = rgb_image->image.rows;
+    }
+    else
+    {
+        // Project all segmented point cloud points on 2D plane
+        image_geometry::PinholeCameraModel cam_model;
+        cam_model.fromCameraInfo(rgb_camera_info);
+        std::vector<cv::Point2d> points_projected;
+        for (auto & point : cloud_segmented->points) {
+            cv::Point3d point3D(point.x, point.y, point.z);
+            cv::Point2d point2D = cam_model.project3dToPixel(point3D);
+            points_projected.push_back(point2D);
+        }
 
         // Calculate 2D corners
-        if (corner2D.x < minPoint2D.x) { minPoint2D.x = corner2D.x; }
-        if (corner2D.x > maxPoint2D.x) { maxPoint2D.x = corner2D.x; }
-        if (corner2D.y < minPoint2D.y) { minPoint2D.y = corner2D.y; }
-        if (corner2D.y > maxPoint2D.y) { maxPoint2D.y = corner2D.y; }
+        for (auto & point : points_projected)
+        {
+            if (point.x < minPoint2D.x) { minPoint2D.x = point.x; }
+            if (point.x > maxPoint2D.x) { maxPoint2D.x = point.x; }
+            if (point.y < minPoint2D.y) { minPoint2D.y = point.y; }
+            if (point.y > maxPoint2D.y) { maxPoint2D.y = point.y; }
+        }
+        if (minPoint2D.x < 0) { minPoint2D.x = 0; }
+        if (maxPoint2D.x > rgb_image->image.cols) { maxPoint2D.x = rgb_image->image.cols; }
+        if (minPoint2D.y < 0) { minPoint2D.y = 0; }
+        if (maxPoint2D.y > rgb_image->image.rows) { maxPoint2D.y = rgb_image->image.rows; }
     }
-    if (minPoint2D.x < 0) { minPoint2D.x = 0; }
-    if (maxPoint2D.x > rgb_image->image.cols) { maxPoint2D.x = rgb_image->image.cols; }
-    if (minPoint2D.y < 0) { minPoint2D.y = 0; }
-    if (maxPoint2D.y > rgb_image->image.rows) { maxPoint2D.y = rgb_image->image.rows; }
     bbox_2d.clear(); bbox_2d.push_back(minPoint2D); bbox_2d.push_back(maxPoint2D);
 }
 
