@@ -104,7 +104,7 @@ void CloudSegmentation::UpdateProperties(PointCloudT &cloud) {
 void CloudSegmentation::pass_through_filter(bool keepOrganized) {
     PointCloudT::Ptr cloud_filtered(new PointCloudT);
     pcl::PassThrough<PointT> pass;
-    pass.setInputCloud(cloud_incoming);
+    pass.setInputCloud(cloud_incoming);  // Start with original cloud
     pass.setFilterFieldName("z");
     pass.setFilterLimits(0.0, 3.0);
     if (cloud_segmented->isOrganized() && keepOrganized) {
@@ -142,9 +142,7 @@ void CloudSegmentation::voxel_filter(bool keepOrganized) {
         extract.setInputCloud(cloud_segmented);
         extract.setIndices(indicesPtr);
         extract.setNegative(false);
-        if (cloud_segmented->isOrganized()) {
-            extract.setKeepOrganized(true);
-        }
+        extract.setKeepOrganized(true);
         extract.filter(*cloud_segmented);
     }
     else
