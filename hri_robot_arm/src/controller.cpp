@@ -1,10 +1,10 @@
-#include "../include/hri_robot_arm/move_arm.h"
+#include "../include/hri_robot_arm/controller.h"
 #include <ros/console.h>
 
 #include <tf_conversions/tf_eigen.h>
 
 
-using namespace kinova;
+using namespace hri_arm;
 
 
 tf::Quaternion EulerZYZ_to_Quaternion(double tz1, double ty, double tz2)
@@ -25,14 +25,9 @@ tf::Quaternion EulerZYZ_to_Quaternion(double tz1, double ty, double tz2)
 }
 
 
-PickPlace::PickPlace(ros::NodeHandle &nh):
+ArmController::ArmController(ros::NodeHandle &nh):
     nh_(nh)
 {
-//    if(ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug))
-//    {
-//        ros::console::notifyLoggerLevelsChanged();
-//    }
-
     ros::NodeHandle pn("~");
 
     nh_.param<std::string>("/robot_type",robot_type_,"j2n6s300");
@@ -40,8 +35,8 @@ PickPlace::PickPlace(ros::NodeHandle &nh):
 
     if (robot_connected_)
     {
-        //sub_joint_ = nh_.subscribe<sensor_msgs::JointState>("/j2s7s300_driver/out/joint_state", 1, &PickPlace::get_current_state, this);
-        sub_pose_ = nh_.subscribe<geometry_msgs::PoseStamped>("/" + robot_type_ +"_driver/out/tool_pose", 1, &PickPlace::get_current_pose, this);
+        sub_joint_ = nh_.subscribe<sensor_msgs::JointState>("/" + robot_type_ + "_driver/out/joint_state", 1, &ArmController::get_current_state, this);
+        sub_pose_ = nh_.subscribe<geometry_msgs::PoseStamped>("/" + robot_type_ +"_driver/out/tool_pose", 1, &ArmController::get_current_pose, this);
     }
 
     // Before we can load the planner, we need two objects, a RobotModel and a PlanningScene.
@@ -81,17 +76,18 @@ PickPlace::PickPlace(ros::NodeHandle &nh):
     // set pre-defined joint and pose values.
     define_cartesian_pose();
 
-    // pick process
+    // If inspection is choosen
     result_ = false;
-    my_pick();
+
+    circular_movement();
 }
 
 
-PickPlace::~PickPlace()
+ArmController::~ArmController()
 {
     // shut down pub and subs
-    //sub_joint_.shutdown();
-    //sub_pose_.shutdown();
+    sub_joint_.shutdown();
+    sub_pose_.shutdown();
     pub_co_.shutdown();
     pub_planning_scene_diff_.shutdown();
 
@@ -102,19 +98,19 @@ PickPlace::~PickPlace()
 }
 
 
-void PickPlace::get_current_state(const sensor_msgs::JointStateConstPtr &msg)
+void ArmController::get_current_state(const sensor_msgs::JointStateConstPtr &msg)
 {
     boost::mutex::scoped_lock lock(mutex_state_);
     current_state_ = *msg;
 }
 
-void PickPlace::get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg)
+void ArmController::get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg)
 {
     boost::mutex::scoped_lock lock(mutex_pose_);
     current_pose_ = *msg;
 }
 
-void PickPlace::clear_workscene()
+void ArmController::clear_workscene()
 {
     // remove table
     co_.id = "table";
@@ -133,7 +129,7 @@ void PickPlace::clear_workscene()
     clear_obstacle();
 }
 
-void PickPlace::build_workscene()
+void ArmController::build_workscene()
 {
     co_.header.frame_id = "root";
     co_.header.stamp = ros::Time::now();
@@ -162,7 +158,7 @@ void PickPlace::build_workscene()
     pub_planning_scene_diff_.publish(planning_scene_msg_);
     ros::WallDuration(0.1).sleep();}
 
-void PickPlace::clear_obstacle()
+void ArmController::clear_obstacle()
 {
     co_.id = "box";
     co_.operation = moveit_msgs::CollisionObject::REMOVE;
@@ -176,7 +172,7 @@ void PickPlace::clear_obstacle()
     //      std::cin >> pause_;
 }
 
-void PickPlace::add_obstacle()
+void ArmController::add_obstacle()
 {
     clear_obstacle();
 
@@ -201,60 +197,7 @@ void PickPlace::add_obstacle()
     ros::WallDuration(0.1).sleep();
 }
 
-void PickPlace::check_collision()
-{
-    collision_detection::CollisionRequest collision_request;
-    collision_detection::CollisionResult collision_result;
-    collision_request.contacts = true;
-    collision_request.max_contacts = 1000;
-
-    collision_result.clear();
-    planning_scene_->checkCollision(collision_request, collision_result);
-    ROS_INFO_STREAM("Test 1: Current state is "
-                    << (collision_result.collision ? "in" : "not in")
-                    << " collision");
-
-    collision_request.group_name = "arm";
-    collision_result.clear();
-    planning_scene_->checkCollision(collision_request, collision_result);
-    ROS_INFO_STREAM("Test 3: Current state is "
-                    << (collision_result.collision ? "in" : "not in")
-                    << " collision");
-
-    // check contact
-    planning_scene_->checkCollision(collision_request, collision_result);
-    ROS_INFO_STREAM("Test 4: Current state is "
-                    << (collision_result.collision ? "in" : "not in")
-                    << " collision");
-    collision_detection::CollisionResult::ContactMap::const_iterator it;
-    for(it = collision_result.contacts.begin();
-        it != collision_result.contacts.end();
-        ++it)
-    {
-        ROS_INFO("Contact between: %s and %s",
-                 it->first.first.c_str(),
-                 it->first.second.c_str());
-    }
-
-    // allowed collision matrix
-    collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrix();
-    robot_state::RobotState copied_state = planning_scene_->getCurrentState();
-
-    collision_detection::CollisionResult::ContactMap::const_iterator it2;
-    for(it2 = collision_result.contacts.begin();
-        it2 != collision_result.contacts.end();
-        ++it2)
-    {
-        acm.setEntry(it2->first.first, it2->first.second, true);
-    }
-    collision_result.clear();
-    planning_scene_->checkCollision(collision_request, collision_result, copied_state, acm);
-    ROS_INFO_STREAM("Test 5: Current state is "
-                    << (collision_result.collision ? "in" : "not in")
-                    << " collision");
-}
-
-void PickPlace::define_cartesian_pose()
+void ArmController::define_cartesian_pose()
 {
     tf::Quaternion q;
 
@@ -270,26 +213,6 @@ void PickPlace::define_cartesian_pose()
     center_.pose.orientation.y = q.y();
     center_.pose.orientation.z = q.z();
     center_.pose.orientation.w = q.w();
-
-    // define grasp pose
-    grasp_pose_.header.frame_id = "root";
-    grasp_pose_.header.stamp  = ros::Time::now();
-    grasp_pose_.pose.position.x = 0.0;
-    grasp_pose_.pose.position.y = 0.6;
-    grasp_pose_.pose.position.z = 0.3;
-
-    q = EulerZYZ_to_Quaternion(M_PI/4, M_PI/2, M_PI);
-    grasp_pose_.pose.orientation.x = q.x();
-    grasp_pose_.pose.orientation.y = q.y();
-    grasp_pose_.pose.orientation.z = q.z();
-    grasp_pose_.pose.orientation.w = q.w();
-
-    // generate_pregrasp_pose(double dist, double azimuth, double polar, double rot_gripper_z)
-    grasp_pose_= generate_gripper_align_pose(grasp_pose_, 0.03999, M_PI/4, M_PI/2, M_PI);
-    pregrasp_pose_ = generate_gripper_align_pose(grasp_pose_, 0.1, M_PI/4, M_PI/2, M_PI);
-    postgrasp_pose_ = grasp_pose_;
-    postgrasp_pose_.pose.position.z = grasp_pose_.pose.position.z + 0.05;
-
 }
 
 /**
@@ -301,7 +224,7 @@ void PickPlace::define_cartesian_pose()
  * @param rot_gripper_z rotation along the z axis of the gripper reference frame (last joint rotation)
  * @return a pose defined in a spherical coordinates where origin is located at the target pose. Normally it is a pre_grasp/post_realease pose, where gripper axis (last joint axis) is pointing to the object (target_pose).
  */
-geometry_msgs::PoseStamped PickPlace::generate_gripper_align_pose(geometry_msgs::PoseStamped targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z)
+geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z)
 {
     geometry_msgs::PoseStamped pose_msg;
 
@@ -329,111 +252,7 @@ geometry_msgs::PoseStamped PickPlace::generate_gripper_align_pose(geometry_msgs:
 
 }
 
-
-void PickPlace::setup_constrain(geometry_msgs::Pose target_pose, bool orientation, bool position)
-{
-    if ( (!orientation) && (!position) )
-    {
-        ROS_WARN("Neither orientation nor position constrain applied.");
-        return;
-    }
-
-    moveit_msgs::Constraints grasp_constrains;
-
-    // setup constrains
-    moveit_msgs::OrientationConstraint ocm;
-    ocm.link_name = robot_type_ + "_end_effector";
-    ocm.header.frame_id = "root";
-    ocm.orientation = target_pose.orientation;
-    ocm.absolute_x_axis_tolerance = 2*M_PI;
-    ocm.absolute_y_axis_tolerance = 2*M_PI;
-    ocm.absolute_z_axis_tolerance = M_PI/10;
-    ocm.weight = 0.5;
-    if (orientation)
-    {
-        grasp_constrains.orientation_constraints.push_back(ocm);
-    }
-
-
-    /* Define position constrain box based on current pose and target pose. */
-    shape_msgs::SolidPrimitive primitive;
-    primitive.type = primitive.BOX;
-    primitive.dimensions.resize(3);
-
-    // group_->getCurrentPose() does not work.
-//    current_pose_ = group_->getCurrentPose();
-    geometry_msgs::Pose current_pose;
-    { // scope for mutex update
-        boost::mutex::scoped_lock lock_pose(mutex_pose_);
-        current_pose = current_pose_.pose;
-//        ROS_DEBUG_STREAM(__PRETTY_FUNCTION__ << ": LINE: " << __LINE__ << ": " << "current_pose_: x " << current_pose_.pose.position.x  << ", y " << current_pose_.pose.position.y  << ", z " << current_pose_.pose.position.z  << ", qx " << current_pose_.pose.orientation.x  << ", qy " << current_pose_.pose.orientation.y  << ", qz " << current_pose_.pose.orientation.z  << ", qw " << current_pose_.pose.orientation.w );
-    }
-
-    double constrain_box_scale = 2.0;
-    primitive.dimensions[0] = constrain_box_scale * std::abs(target_pose.position.x - current_pose.position.x);
-    primitive.dimensions[1] = constrain_box_scale * std::abs(target_pose.position.y - current_pose.position.y);
-    primitive.dimensions[2] = constrain_box_scale * std::abs(target_pose.position.z - current_pose.position.z);
-
-    /* A pose for the box (specified relative to frame_id) */
-    geometry_msgs::Pose box_pose;
-    box_pose.orientation.w = 1.0;
-    // place between start point and goal point.
-    box_pose.position.x = (target_pose.position.x + current_pose.position.x)/2.0;
-    box_pose.position.y = (target_pose.position.y + current_pose.position.y)/2.0;
-    box_pose.position.z = (target_pose.position.z + current_pose.position.z)/2.0;
-
-    moveit_msgs::PositionConstraint pcm;
-    pcm.link_name = robot_type_+"_end_effector";
-    pcm.header.frame_id = "root";
-    pcm.constraint_region.primitives.push_back(primitive);
-    pcm.constraint_region.primitive_poses.push_back(box_pose);
-    pcm.weight = 0.5;
-    if(position)
-    {
-        grasp_constrains.position_constraints.push_back(pcm);
-    }
-
-    group_->setPathConstraints(grasp_constrains);
-
-
-//    // The bellowing code is just for visulizing the box and check.
-//    // Disable this part after checking.
-//    co_.id = "check_constrain";
-//    co_.operation = moveit_msgs::CollisionObject::REMOVE;
-//    pub_co_.publish(co_);
-
-//    co_.operation = moveit_msgs::CollisionObject::ADD;
-//    co_.primitives.push_back(primitive);
-//    co_.primitive_poses.push_back(box_pose);
-//    pub_co_.publish(co_);
-//    planning_scene_msg_.world.collision_objects.push_back(co_);
-//    planning_scene_msg_.is_diff = true;
-//    pub_planning_scene_diff_.publish(planning_scene_msg_);
-//    ros::WallDuration(0.1).sleep();
-}
-
-void PickPlace::check_constrain()
-{
-    moveit_msgs::Constraints grasp_constrains = group_->getPathConstraints();
-    bool has_constrain = false;
-    ROS_INFO("check constrain result: ");
-    if (!grasp_constrains.orientation_constraints.empty())
-    {
-        has_constrain = true;
-        ROS_INFO("Has orientation constrain. ");
-    }
-    if(!grasp_constrains.position_constraints.empty())
-    {
-        has_constrain = true;
-        ROS_INFO("Has position constrain. ");
-    }
-    if(has_constrain == false)
-    {
-        ROS_INFO("No constrain. ");
-    }
-}
-
-void PickPlace::evaluate_plan(moveit::planning_interface::MoveGroupInterface &group, bool inspect_first)
+void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface &group, bool inspect_first)
 {
     if (!inspect_first) {
         group.move();
@@ -498,8 +317,7 @@ void PickPlace::evaluate_plan(moveit::planning_interface::MoveGroupInterface &gr
     ros::WallDuration(1.0).sleep();
 }
 
-
-bool PickPlace::my_pick()
+bool ArmController::circular_movement()
 {
     bool inspect_first = false;
     //group_->setMaxVelocityScalingFactor(0.1);
@@ -556,7 +374,7 @@ bool PickPlace::my_pick()
     return true;
 }
 
-std::vector<geometry_msgs::Pose> PickPlace::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
+std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
 {
     // Create Cartesian Paths
     std::vector<geometry_msgs::Pose> waypoints; //end_effector_trajectory
@@ -584,12 +402,12 @@ std::vector<geometry_msgs::Pose> PickPlace::calc_waypoints(const geometry_msgs::
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "pick_place_demo");
+    ros::init(argc, argv, "hri_arm");
     ros::NodeHandle node;
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
-    kinova::PickPlace pick_place(node);
+    hri_arm::ArmController arm_controller(node);
 
     ros::spin();
     return 0;

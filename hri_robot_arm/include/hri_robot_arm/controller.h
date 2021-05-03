@@ -1,5 +1,5 @@
-#ifndef PICK_PLACE_H
-#define PICK_PLACE_H
+#ifndef HRI_ROBOT_ARM_CONTROLLER_H
+#define HRI_ROBOT_ARM_CONTROLLER_H
 
 #include <ros/ros.h>
 #include <kinova_driver/kinova_ros_types.h>
@@ -28,15 +28,15 @@
 #include <moveit_msgs/ApplyPlanningScene.h>
 #include <moveit_msgs/DisplayTrajectory.h>
 
-namespace kinova
+namespace hri_arm
 {
 
 
-    class PickPlace
+    class ArmController
     {
     public:
-        PickPlace(ros::NodeHandle &nh);
-        ~PickPlace();
+        ArmController(ros::NodeHandle &nh);
+        ~ArmController();
 
 
 
@@ -69,15 +69,12 @@ namespace kinova
         std::vector<std::string> joint_names_;
         std::vector<double> joint_values_;
 
-        // use Kinova Inverse Kinematic model to generate joint value, then setJointTarget().
-        bool use_KinovaInK_;
-
         // check some process if success.
         bool result_;
         // wait for user input to continue: cin >> pause_;
         std::string pause_;
         std::string robot_type_;
-        bool robot_connected_;
+        bool robot_connected_{};
 
         // update current state and pose
         boost::mutex mutex_state_;
@@ -86,18 +83,7 @@ namespace kinova
         geometry_msgs::PoseStamped current_pose_;
 
 
-        // define pick_place joint value and pose
-        std::vector<double> start_joint_;
-        std::vector<double> grasp_joint_;
-        std::vector<double> pregrasp_joint_;
-        std::vector<double> postgrasp_joint_;
-
         geometry_msgs::PoseStamped center_;
-        geometry_msgs::PoseStamped grasp_pose_;
-        geometry_msgs::PoseStamped can_pose_;
-        geometry_msgs::PoseStamped pregrasp_pose_;
-        geometry_msgs::PoseStamped postgrasp_pose_;
-
 
         void build_workscene();
         void add_obstacle();
@@ -105,19 +91,16 @@ namespace kinova
         void clear_workscene();
 
         void define_cartesian_pose();
-        geometry_msgs::PoseStamped generate_gripper_align_pose(geometry_msgs::PoseStamped targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
-        void setup_constrain(geometry_msgs::Pose target_pose, bool orientation, bool position);
-        void check_constrain();
+        static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
 
-        bool my_pick();
+        bool circular_movement();
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
-        void check_collision();
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group, bool inspect_first = true);
     };
 }
 
 
-#endif // PICK_PLACE_H
+#endif // HRI_ROBOT_ARM_CONTROLLER_H

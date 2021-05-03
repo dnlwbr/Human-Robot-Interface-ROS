@@ -161,7 +161,7 @@ include_directories(${kinova_driver_INCLUDE_DIRS})
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(${PROJECT_NAME}_node src/move_arm.cpp include/hri_robot_arm/move_arm.h)
+add_executable(${PROJECT_NAME}_node src/controller.cpp include/hri_robot_arm/controller.h)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
