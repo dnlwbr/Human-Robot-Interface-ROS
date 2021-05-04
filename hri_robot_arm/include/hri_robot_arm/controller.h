@@ -69,8 +69,6 @@ namespace hri_arm
         std::vector<std::string> joint_names_;
         std::vector<double> joint_values_;
 
-        // check some process if success.
-        bool result_;
         // wait for user input to continue: cin >> pause_;
         std::string pause_;
         std::string robot_type_;

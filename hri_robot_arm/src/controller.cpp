@@ -76,8 +76,6 @@ ArmController::ArmController(ros::NodeHandle &nh):
     // set pre-defined joint and pose values.
     define_cartesian_pose();
 
-    // If inspection is choosen
-    result_ = false;
 
     circular_movement();
 }
@@ -205,8 +203,8 @@ void ArmController::define_cartesian_pose()
     center_.header.frame_id = "root";
     center_.header.stamp = ros::Time::now();
     center_.pose.position.x = 0.0;
-    center_.pose.position.y = 0.0;
-    center_.pose.position.z = 0.8;
+    center_.pose.position.y = -0.5;
+    center_.pose.position.z = 0.1;
 
     q = EulerZYZ_to_Quaternion(M_PI/4, M_PI/2, M_PI);
     center_.pose.orientation.x = q.x();
@@ -216,7 +214,7 @@ void ArmController::define_cartesian_pose()
 }
 
 /**
- * @brief PickPlace::generate_gripper_align_pose
+ * @brief ArmController::generate_gripper_align_pose
  * @param targetpose_msg pick/place pose (object location): where gripper close/open the fingers (grasp/release the object). Only position information is used.
  * @param dist distance of returned pose to targetpose
  * @param azimuth an angle measured from the x-axis in the xy-plane in spherical coordinates, denoted theta (0<= theta < 2pi ).
@@ -259,6 +257,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
         return;
     }
 
+    bool result = false;
     bool replan = true;
     int count = 0;
 
@@ -266,23 +265,23 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
     {
         // reset flag for replan
         count = 0;
-        result_ = false;
+        result = false;
 
         // try to find a success plan.
         double plan_time;
-        while (!result_ && count < 5)
+        while (!result && count < 5)
         {
             count++;
             plan_time = 20+count*10;
             ROS_INFO("Setting plan time to %f sec", plan_time);
             group.setPlanningTime(plan_time);
-            result_ = (group.plan(my_plan_) == moveit_msgs::MoveItErrorCodes::SUCCESS);
+            result = (group.plan(my_plan_) == moveit_msgs::MoveItErrorCodes::SUCCESS);
             std::cout << "at attemp: " << count << std::endl;
             ros::WallDuration(0.1).sleep();
         }
 
         // found a plan
-        if (result_)
+        if (result)
         {
             std::cout << "plan success at attemp: " << count << std::endl;
 
@@ -307,7 +306,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
         }
     }
 
-    if(result_)
+    if(result)
     {
         if (pause_ == "e" || pause_ == "E")
         {
@@ -349,10 +348,7 @@ bool ArmController::circular_movement()
     ROS_INFO("Compute path ...");
     moveit_msgs::RobotTrajectory trajectory;
     double fraction = group_->computeCartesianPath(waypoints, 0.01,5.0, trajectory);
-    ROS_INFO("Visualizing cartesian path (%.2f%% acheived)",  fraction * 100.0);
-    if (fraction < 0.7) {
-        ROS_WARN("Trajectory not complete!");
-    }
+//    ROS_INFO("Visualizing cartesian path (%.2f%% achieved)",  fraction * 100.0);
 
     ROS_INFO_STREAM("Start recording ...");
     my_plan_.trajectory_ = trajectory;
@@ -377,25 +373,53 @@ bool ArmController::circular_movement()
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
 {
     // Create Cartesian Paths
-    std::vector<geometry_msgs::Pose> waypoints; //end_effector_trajectory
+    std::vector<geometry_msgs::Pose> waypoints; // end_effector_trajectory
+    std::vector<geometry_msgs::Pose> waypoints2; // second part, if unreachable points in between
     geometry_msgs::PoseStamped target_pose;
     target_pose.header.frame_id = "root";
 
     // Trajectory parameters (circle)
-    double angle_resolution_deg = 30;
+    double angle_resolution_deg = 10;
     double diff_angle_rad = angle_resolution_deg * 3.14/180;
     double angle_rad = 0;
 
     // Plan for the trajectory
+    // (temporarily reduce planning time due to the delay caused by failed attempts)
+    double planning_time = group_->getPlanningTime();
+    group_->setPlanningTime(0.25);
+    bool gap = false;
     for (int i = 0; i< (360/angle_resolution_deg); i++)
     {
         // Discretize the trajectory
         angle_rad -= diff_angle_rad; // clockwise rotation ("+" for counterclockwise)
-        target_pose = generate_gripper_align_pose(center_, radius, angle_rad, M_PI/2, M_PI/2);
+        target_pose = generate_gripper_align_pose(center_, radius, angle_rad, 3*M_PI/4, M_PI/2);
         target_pose.header.stamp = ros::Time::now();
-        waypoints.push_back(target_pose.pose);
+
+        // Check whether the pose is reachable
+        group_->setPoseTarget(target_pose);
+        bool result = (group_->plan(my_plan_) == moveit_msgs::MoveItErrorCodes::SUCCESS);
+        group_->clearPoseTargets();
+        if (result) {
+            if (!gap) {
+                waypoints.push_back(target_pose.pose);
+            }
+            else {
+                waypoints2.push_back(target_pose.pose);
+            }
+        }
+        else {
+            gap = true;
+        }
     }
-//    ROS_INFO("There are %zu number of waypoints", waypoints.size());
+    // Concatinate the valid waypoints
+    waypoints.insert(waypoints.begin(), waypoints2.begin(), waypoints2.end());
+    double percent = 100.0 * (float)waypoints.size() / (360/angle_resolution_deg);
+    ROS_INFO("%.2f%% of the path is reachable.", percent);
+    //    ROS_INFO("There are %zu number of waypoints", waypoints.size());
+
+    // Reset planning time to previous value
+    group_->setPlanningTime(planning_time);
+
     return waypoints;
 }
 
