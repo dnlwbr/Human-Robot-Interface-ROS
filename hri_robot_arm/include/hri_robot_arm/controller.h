@@ -7,6 +7,12 @@
 #include <actionlib/client/simple_action_client.h>
 #include <kinova_msgs/SetFingersPositionAction.h>
 
+#include <vision_msgs/Detection3D.h>
+#include "hri_robot_arm/Record.h"
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
 // MoveIt!
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <moveit/robot_state/robot_state.h>
@@ -28,6 +34,7 @@
 #include <moveit_msgs/ApplyPlanningScene.h>
 #include <moveit_msgs/DisplayTrajectory.h>
 
+
 namespace hri_arm
 {
 
@@ -37,7 +44,6 @@ namespace hri_arm
     public:
         ArmController(ros::NodeHandle &nh);
         ~ArmController();
-
 
 
     private:
@@ -59,11 +65,11 @@ namespace hri_arm
         moveit_msgs::CollisionObject co_;
         moveit_msgs::PlanningScene planning_scene_msg_;
 
-
         ros::Publisher pub_co_;
         ros::Publisher pub_planning_scene_diff_;
         ros::Subscriber sub_pose_;
         ros::Subscriber sub_joint_;
+        ros::ServiceServer service_record_;
 
         //
         std::vector<std::string> joint_names_;
@@ -80,23 +86,28 @@ namespace hri_arm
         sensor_msgs::JointState current_state_;
         geometry_msgs::PoseStamped current_pose_;
 
+        // Transformation
+        tf2_ros::Buffer tf_buffer_;
+        tf2_ros::TransformListener tf_listener_;
 
+        // Bounding box
         geometry_msgs::PoseStamped center_;
-
-        void build_workscene();
-        void add_obstacle();
-        void clear_obstacle();
-        void clear_workscene();
-
-        void define_cartesian_pose();
-        static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
-
-        bool circular_movement();
-        std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
+        geometry_msgs::Vector3Stamped size_;
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
-        void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group, bool inspect_first = true);
+
+        void clear_workscene();
+        void build_workscene();
+        void clear_obstacle();
+        void add_obstacle();
+
+        static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
+        void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
+        bool record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res);
+        void convert_bb_to_root_frame(const vision_msgs::Detection3D &bbox);
+        std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
+        double calc_radius();
     };
 }
 

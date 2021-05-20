@@ -26,7 +26,8 @@ tf::Quaternion EulerZYZ_to_Quaternion(double tz1, double ty, double tz2)
 
 
 ArmController::ArmController(ros::NodeHandle &nh):
-    nh_(nh)
+        nh_(nh),
+        tf_listener_(tf_buffer_)
 {
     ros::NodeHandle pn("~");
 
@@ -54,7 +55,10 @@ ArmController::ArmController(ros::NodeHandle &nh):
     group_ = new moveit::planning_interface::MoveGroupInterface("arm");
     gripper_group_ = new moveit::planning_interface::MoveGroupInterface("gripper");
 
-    group_->setEndEffectorLink(robot_type_ + "_end_effector");
+    group_->setPoseReferenceFrame("root");
+//    group_->setEndEffectorLink(robot_type_ + "_end_effector");
+    group_->setEndEffectorLink("realsense2_end_effector");
+//    group_->setMaxVelocityScalingFactor(0.5);
 
     finger_client_ = new actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction>
             ("/" + robot_type_ + "_driver/fingers_action/finger_positions", false);
@@ -73,11 +77,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         joint_names_[i] = robot_type_ + "_joint_" + boost::lexical_cast<std::string>(i+1);
     }
 
-    // set pre-defined joint and pose values.
-    define_cartesian_pose();
-
-
-    circular_movement();
+    service_record_ = nh_.advertiseService("/hri_robot_arm/Record", &ArmController::record, this);
 }
 
 
@@ -88,6 +88,7 @@ ArmController::~ArmController()
     sub_pose_.shutdown();
     pub_co_.shutdown();
     pub_planning_scene_diff_.shutdown();
+    service_record_.shutdown();
 
     // release memory
     delete group_;
@@ -112,11 +113,6 @@ void ArmController::clear_workscene()
 {
     // remove table
     co_.id = "table";
-    co_.operation = moveit_msgs::CollisionObject::REMOVE;
-    pub_co_.publish(co_);
-
-    // remove target
-    co_.id = "target_cylinder";
     co_.operation = moveit_msgs::CollisionObject::REMOVE;
     pub_co_.publish(co_);
 
@@ -149,7 +145,7 @@ void ArmController::build_workscene()
     co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = 0.03;
     co_.primitive_poses[0].position.x = 0;
     co_.primitive_poses[0].position.y = 0.0;
-    co_.primitive_poses[0].position.z = -0.03/2.0;
+    co_.primitive_poses[0].position.z = -0.03/2.0 - 0.1;
     pub_co_.publish(co_);
     planning_scene_msg_.world.collision_objects.push_back(co_);
     planning_scene_msg_.is_diff = true;
@@ -181,9 +177,9 @@ void ArmController::add_obstacle()
     co_.primitives[0].dimensions.resize(geometric_shapes::SolidPrimitiveDimCount<shape_msgs::SolidPrimitive::BOX>::value);
     co_.operation = moveit_msgs::CollisionObject::ADD;
 
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_X] = 0.1;
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = 0.1;
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = 0.1;
+    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_X] = size_.vector.x;
+    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = size_.vector.y;
+    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = size_.vector.z;
 
     co_.primitive_poses[0].position = center_.pose.position;
 
@@ -193,24 +189,6 @@ void ArmController::add_obstacle()
     planning_scene_msg_.is_diff = true;
     pub_planning_scene_diff_.publish(planning_scene_msg_);
     ros::WallDuration(0.1).sleep();
-}
-
-void ArmController::define_cartesian_pose()
-{
-    tf::Quaternion q;
-
-    // define start pose before grasp
-    center_.header.frame_id = "root";
-    center_.header.stamp = ros::Time::now();
-    center_.pose.position.x = 0.0;
-    center_.pose.position.y = -0.5;
-    center_.pose.position.z = 0.1;
-
-    q = EulerZYZ_to_Quaternion(M_PI/4, M_PI/2, M_PI);
-    center_.pose.orientation.x = q.x();
-    center_.pose.orientation.y = q.y();
-    center_.pose.orientation.z = q.z();
-    center_.pose.orientation.w = q.w();
 }
 
 /**
@@ -227,6 +205,7 @@ geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geom
     geometry_msgs::PoseStamped pose_msg;
 
     pose_msg.header.frame_id = "root";
+    pose_msg.header.stamp = ros::Time::now();
 
     // computer pregrasp position w.r.t. location of grasp_pose in spherical coordinate. Orientation is w.r.t. fixed world (root) reference frame.
     double delta_x = -dist * cos(azimuth) * sin(polar);
@@ -247,16 +226,10 @@ geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geom
     ROS_DEBUG_STREAM(__PRETTY_FUNCTION__ << ": LINE: " << __LINE__ << ": " << "pose_msg: x " << pose_msg.pose.position.x  << ", y " << pose_msg.pose.position.y  << ", z " << pose_msg.pose.position.z  << ", qx " << pose_msg.pose.orientation.x  << ", qy " << pose_msg.pose.orientation.y  << ", qz " << pose_msg.pose.orientation.z  << ", qw " << pose_msg.pose.orientation.w );
 
     return pose_msg;
-
 }
 
-void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface &group, bool inspect_first)
+void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface &group)
 {
-    if (!inspect_first) {
-        group.move();
-        return;
-    }
-
     bool result = false;
     bool replan = true;
     int count = 0;
@@ -316,11 +289,12 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
     ros::WallDuration(1.0).sleep();
 }
 
-bool ArmController::circular_movement()
+bool ArmController::record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res)
 {
-    bool inspect_first = false;
-    //group_->setMaxVelocityScalingFactor(0.1);
+    // Convert bounding box to root frame
+    convert_bb_to_root_frame(req.object);
 
+    ROS_INFO_STREAM("Build workspace ...");
     clear_workscene();
     ros::WallDuration(1.0).sleep();
     build_workscene();
@@ -329,34 +303,34 @@ bool ArmController::circular_movement()
 
     ROS_INFO_STREAM("Send robot to home position ...");
     group_->setNamedTarget("Home");
-    evaluate_plan(*group_, inspect_first);
+    group_->move();
     ros::WallDuration(1.0).sleep();
-    gripper_group_->setNamedTarget("Open");
+    gripper_group_->setNamedTarget("Close");
     gripper_group_->move();
 
     ROS_INFO("Add bounding box as obstacle");
-    add_obstacle(); // TODO Size
+    add_obstacle();
     ros::WallDuration(1.0).sleep();
 
     ROS_INFO("Calculate waypoints ...");
-    std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(center_, 0.15);
+    double radius = calc_radius();
+    std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(center_, radius);
 
     ROS_INFO_STREAM("Go to start position  ...");
     group_->setPoseTarget(waypoints.front());
-    evaluate_plan(*group_, inspect_first);
+    group_->move(); // evaluate_plan(*group_);
 
     ROS_INFO("Compute path ...");
     moveit_msgs::RobotTrajectory trajectory;
     double fraction = group_->computeCartesianPath(waypoints, 0.01,5.0, trajectory);
-//    ROS_INFO("Visualizing cartesian path (%.2f%% achieved)",  fraction * 100.0);
+    ROS_INFO("Visualizing cartesian path (%.2f%% of the reachable waypoints included)",  fraction * 100.0);
 
     ROS_INFO_STREAM("Start recording ...");
-    my_plan_.trajectory_ = trajectory;
     group_->execute(trajectory); // Inspection/Evaluation does not work
 
     ROS_INFO_STREAM("Return to home position  ...");
     group_->setNamedTarget("Home");
-    evaluate_plan(*group_, inspect_first);
+    group_->move();
 
 //  If need to double check if reach target position.
 //    replacement of group_->getCurrentPose();
@@ -367,7 +341,32 @@ bool ArmController::circular_movement()
 
     clear_workscene();
     ros::WallDuration(1.0).sleep();
+    res.completed = true;
     return true;
+}
+
+void ArmController::convert_bb_to_root_frame(const vision_msgs::Detection3D &bbox)
+{
+    geometry_msgs::TransformStamped tf_to_root;
+    try{
+        tf_to_root = tf_buffer_.lookupTransform("root",
+                                                bbox.header.frame_id,
+                                                ros::Time(0),
+                                                ros::Duration(1.0));
+    }
+    catch (tf2::TransformException &ex) {
+        ROS_WARN("Failure: %s", ex.what());
+    }
+
+    // Center pose
+    center_.header = bbox.header;
+    center_.pose = bbox.bbox.center;
+    tf2::doTransform(center_, center_, tf_to_root);
+
+    // Size
+    size_.header = bbox.header;
+    size_.vector = bbox.bbox.size;
+    tf2::doTransform(size_, size_, tf_to_root);
 }
 
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
@@ -376,7 +375,6 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
     std::vector<geometry_msgs::Pose> waypoints; // end_effector_trajectory
     std::vector<geometry_msgs::Pose> waypoints2; // second part, if unreachable points in between
     geometry_msgs::PoseStamped target_pose;
-    target_pose.header.frame_id = "root";
 
     // Trajectory parameters (circle)
     double angle_resolution_deg = 10;
@@ -393,7 +391,6 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
         // Discretize the trajectory
         angle_rad -= diff_angle_rad; // clockwise rotation ("+" for counterclockwise)
         target_pose = generate_gripper_align_pose(center_, radius, angle_rad, 3*M_PI/4, M_PI/2);
-        target_pose.header.stamp = ros::Time::now();
 
         // Check whether the pose is reachable
         group_->setPoseTarget(target_pose);
@@ -411,11 +408,10 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
             gap = true;
         }
     }
-    // Concatinate the valid waypoints
+    // Concatenate the valid waypoints
     waypoints.insert(waypoints.begin(), waypoints2.begin(), waypoints2.end());
     double percent = 100.0 * (float)waypoints.size() / (360/angle_resolution_deg);
-    ROS_INFO("%.2f%% of the path is reachable.", percent);
-    //    ROS_INFO("There are %zu number of waypoints", waypoints.size());
+    ROS_INFO("%.2f%% of the %zu waypoints are reachable.", percent, waypoints.size());
 
     // Reset planning time to previous value
     group_->setPlanningTime(planning_time);
@@ -423,16 +419,24 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
     return waypoints;
 }
 
+double ArmController::calc_radius() {
+    double radius = 0.2; // Minimum distance to the object (realsense2 to end effector)
+    radius = (size_.vector.x) > radius ? size_.vector.x : radius;
+    radius = (size_.vector.y) > radius ? size_.vector.y : radius;
+    radius = (size_.vector.z) > radius ? size_.vector.z : radius;
+    return 1.5 * radius;
+}
+
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "hri_arm");
+    ros::init(argc, argv, "hri_robot_arm");
     ros::NodeHandle node;
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
     hri_arm::ArmController arm_controller(node);
 
-    ros::spin();
+    ros::waitForShutdown();
     return 0;
 }
