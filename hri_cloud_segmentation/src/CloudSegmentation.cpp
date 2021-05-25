@@ -318,12 +318,12 @@ void CloudSegmentation::calc_bounding_box() {
     geometry_msgs::TransformStamped cloud_to_camera_base_leveled;
     geometry_msgs::TransformStamped camera_base_leveled_to_cloud;
     try{
-        cloud_to_camera_base_leveled = tf_buffer.lookupTransform("camera_base_leveled",
+        cloud_to_camera_base_leveled = tf_buffer.lookupTransform("azure_kinect_camera_base_leveled",
                                                                  cloud_segmented->header.frame_id,
                                                                  ros::Time(0),
                                                                  ros::Duration(1.0));
         camera_base_leveled_to_cloud = tf_buffer.lookupTransform(cloud_segmented->header.frame_id,
-                                                                 "camera_base_leveled",
+                                                                 "azure_kinect_camera_base_leveled",
                                                                  ros::Time(0),
                                                                  ros::Duration(1.0));
     }
