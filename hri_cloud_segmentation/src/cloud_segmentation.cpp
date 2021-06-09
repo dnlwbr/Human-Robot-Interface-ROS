@@ -74,10 +74,12 @@ int main (int argc, char** argv)
         seg.calc_bounding_box();
         seg.crop_image_to_bb();
 
-        pub_segmented_cloud.publish(*seg.cloud_segmented);
-        pub_box.publish(seg.object);
-        pub_viz_marker.publish(seg.marker);
-        pub_rgb_image.publish(seg.rgb_image_cropped_msg);
+        if (seg.cloud_segmented->width != 0) {
+            pub_segmented_cloud.publish(*seg.cloud_segmented);
+            pub_box.publish(seg.object);
+            pub_viz_marker.publish(seg.marker);
+            pub_rgb_image.publish(seg.rgb_image_cropped_msg);
+        }
 
         ros::spinOnce();    // process callbacks
         loop_rate.sleep();
