@@ -292,7 +292,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 bool ArmController::record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res)
 {
     // Convert bounding box to root frame
-    convert_bb_to_root_frame(req.object);
+    convert_bb_to_root_frame(req);
 
     ROS_INFO_STREAM("Build workspace ...");
     clear_workscene();
@@ -345,12 +345,12 @@ bool ArmController::record(hri_robot_arm::Record::Request &req, hri_robot_arm::R
     return true;
 }
 
-void ArmController::convert_bb_to_root_frame(const vision_msgs::Detection3D &bbox)
+void ArmController::convert_bb_to_root_frame(const hri_robot_arm::Record::Request &box)
 {
     geometry_msgs::TransformStamped tf_to_root;
     try{
         tf_to_root = tf_buffer_.lookupTransform("root",
-                                                bbox.header.frame_id,
+                                                box.header.frame_id,
                                                 ros::Time(0),
                                                 ros::Duration(1.0));
     }
@@ -359,13 +359,13 @@ void ArmController::convert_bb_to_root_frame(const vision_msgs::Detection3D &bbo
     }
 
     // Center pose
-    center_.header = bbox.header;
-    center_.pose = bbox.bbox.center;
+    center_.header = box.header;
+    center_.pose = box.bbox.center;
     tf2::doTransform(center_, center_, tf_to_root);
 
     // Size
-    size_.header = bbox.header;
-    size_.vector = bbox.bbox.size;
+    size_.header = box.header;
+    size_.vector = box.bbox.size;
     tf2::doTransform(size_, size_, tf_to_root);
 }
 

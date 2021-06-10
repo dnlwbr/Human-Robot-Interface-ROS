@@ -1,3 +1,4 @@
-vision_msgs/Detection3D object
+Header header
+vision_msgs/BoundingBox3D bbox
 ---
 bool completed

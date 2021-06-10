@@ -7,7 +7,7 @@
 #include <actionlib/client/simple_action_client.h>
 #include <kinova_msgs/SetFingersPositionAction.h>
 
-#include <vision_msgs/Detection3D.h>
+#include <vision_msgs/BoundingBox3D.h>
 #include "hri_robot_arm/Record.h"
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -105,7 +105,7 @@ namespace hri_arm
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         bool record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res);
-        void convert_bb_to_root_frame(const vision_msgs::Detection3D &bbox);
+        void convert_bb_to_root_frame(const hri_robot_arm::Record::Request &box);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
         double calc_radius();
     };
