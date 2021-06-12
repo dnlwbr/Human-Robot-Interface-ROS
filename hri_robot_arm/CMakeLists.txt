@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   message_generation
+  actionlib_msgs
   std_msgs
   moveit_core
   moveit_ros_planning
@@ -67,21 +68,22 @@ find_package(Boost REQUIRED system filesystem date_time thread)
 # )
 
 # Generate services in the 'srv' folder
-add_service_files(
-  FILES
-  Record.srv
-)
+#add_service_files(
+#  FILES
+#  Record.srv
+#)
 
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
+add_action_files(
+  FILES
+  Record.action
+)
 
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
   DEPENDENCIES
+  actionlib_msgs
+  std_msgs
   vision_msgs
 )
 
@@ -127,6 +129,7 @@ catkin_package(
         moveit_ros_planning_interface
         interactive_markers
         eigen_conversions
+        actionlib_msgs
 )
 find_package(Eigen3 REQUIRED)
 
@@ -200,7 +203,7 @@ target_link_libraries(${PROJECT_NAME}_node
 # install(TARGETS ${PROJECT_NAME}_node
 #   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
-install(TARGETS ${PROJECT_NAME}_node DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+# install(TARGETS ${PROJECT_NAME}_node DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 ## Mark libraries for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_libraries.html

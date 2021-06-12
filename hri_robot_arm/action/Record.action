@@ -1,0 +1,9 @@
+#goal
+Header header
+vision_msgs/BoundingBox3D bbox
+---
+#result
+bool success
+---
+#feedback
+float64 progress

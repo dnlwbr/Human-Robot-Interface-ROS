@@ -5,10 +5,11 @@
 #include <kinova_driver/kinova_ros_types.h>
 
 #include <actionlib/client/simple_action_client.h>
+#include <actionlib/server/simple_action_server.h>
 #include <kinova_msgs/SetFingersPositionAction.h>
 
 #include <vision_msgs/BoundingBox3D.h>
-#include "hri_robot_arm/Record.h"
+#include "hri_robot_arm/RecordAction.h"
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -69,7 +70,12 @@ namespace hri_arm
         ros::Publisher pub_planning_scene_diff_;
         ros::Subscriber sub_pose_;
         ros::Subscriber sub_joint_;
-        ros::ServiceServer service_record_;
+        actionlib::SimpleActionServer<hri_robot_arm::RecordAction> action_server_;
+
+        // create messages that are used to published feedback/result
+        hri_robot_arm::RecordFeedback feedback_;
+        hri_robot_arm::RecordResult result_;
+        double percentage_reachable_;
 
         //
         std::vector<std::string> joint_names_;
@@ -104,8 +110,8 @@ namespace hri_arm
 
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
-        bool record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res);
-        void convert_bb_to_root_frame(const hri_robot_arm::Record::Request &box);
+        void record(const hri_robot_arm::RecordGoalConstPtr &goal);
+        void convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
         double calc_radius();
     };

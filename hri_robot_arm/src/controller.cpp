@@ -27,7 +27,8 @@ tf::Quaternion EulerZYZ_to_Quaternion(double tz1, double ty, double tz2)
 
 ArmController::ArmController(ros::NodeHandle &nh):
         nh_(nh),
-        tf_listener_(tf_buffer_)
+        tf_listener_(tf_buffer_),
+        action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false)
 {
     ros::NodeHandle pn("~");
 
@@ -77,7 +78,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         joint_names_[i] = robot_type_ + "_joint_" + boost::lexical_cast<std::string>(i+1);
     }
 
-    service_record_ = nh_.advertiseService("/hri_robot_arm/Record", &ArmController::record, this);
+    action_server_.start();
 }
 
 
@@ -88,7 +89,6 @@ ArmController::~ArmController()
     sub_pose_.shutdown();
     pub_co_.shutdown();
     pub_planning_scene_diff_.shutdown();
-    service_record_.shutdown();
 
     // release memory
     delete group_;
@@ -289,28 +289,28 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
     ros::WallDuration(1.0).sleep();
 }
 
-bool ArmController::record(hri_robot_arm::Record::Request &req, hri_robot_arm::Record::Response &res)
+void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 {
     // Convert bounding box to root frame
-    convert_bb_to_root_frame(req);
+    convert_bb_to_root_frame(goal);
 
     ROS_INFO_STREAM("Build workspace ...");
     clear_workscene();
-    ros::WallDuration(1.0).sleep();
+    ros::WallDuration(0.5).sleep();
     build_workscene();
-    ros::WallDuration(1.0).sleep();
+    ros::WallDuration(0.5).sleep();
     group_->clearPathConstraints();
 
     ROS_INFO_STREAM("Send robot to home position ...");
     group_->setNamedTarget("Home");
     group_->move();
-    ros::WallDuration(1.0).sleep();
+    ros::WallDuration(0.5).sleep();
     gripper_group_->setNamedTarget("Close");
     gripper_group_->move();
 
     ROS_INFO("Add bounding box as obstacle");
     add_obstacle();
-    ros::WallDuration(1.0).sleep();
+    ros::WallDuration(0.5).sleep();
 
     ROS_INFO("Calculate waypoints ...");
     double radius = calc_radius();
@@ -340,17 +340,18 @@ bool ArmController::record(hri_robot_arm::Record::Request &req, hri_robot_arm::R
 //    }
 
     clear_workscene();
-    ros::WallDuration(1.0).sleep();
-    res.completed = true;
-    return true;
+    ros::WallDuration(0.5).sleep();
+    result_.success = percentage_reachable_ > 60;
+    action_server_.setSucceeded(result_);
+    ROS_INFO_STREAM("Finished.");
 }
 
-void ArmController::convert_bb_to_root_frame(const hri_robot_arm::Record::Request &box)
+void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box)
 {
     geometry_msgs::TransformStamped tf_to_root;
     try{
         tf_to_root = tf_buffer_.lookupTransform("root",
-                                                box.header.frame_id,
+                                                box->header.frame_id,
                                                 ros::Time(0),
                                                 ros::Duration(1.0));
     }
@@ -359,13 +360,13 @@ void ArmController::convert_bb_to_root_frame(const hri_robot_arm::Record::Reques
     }
 
     // Center pose
-    center_.header = box.header;
-    center_.pose = box.bbox.center;
+    center_.header = box->header;
+    center_.pose = box->bbox.center;
     tf2::doTransform(center_, center_, tf_to_root);
 
     // Size
-    size_.header = box.header;
-    size_.vector = box.bbox.size;
+    size_.header = box->header;
+    size_.vector = box->bbox.size;
     tf2::doTransform(size_, size_, tf_to_root);
 }
 
@@ -407,11 +408,16 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
         else {
             gap = true;
         }
+        feedback_.progress = 100.0 * i / (360/angle_resolution_deg);
+        action_server_.publishFeedback(feedback_);
     }
+    feedback_.progress = 100.0;
+    action_server_.publishFeedback(feedback_);
+
     // Concatenate the valid waypoints
     waypoints.insert(waypoints.begin(), waypoints2.begin(), waypoints2.end());
-    double percent = 100.0 * (float)waypoints.size() / (360/angle_resolution_deg);
-    ROS_INFO("%.2f%% of the %zu waypoints are reachable.", percent, waypoints.size());
+    percentage_reachable_ = 100.0 * (float)waypoints.size() / (360/angle_resolution_deg);
+    ROS_INFO("%.2f%% of the %zu waypoints are reachable.", percentage_reachable_, waypoints.size());
 
     // Reset planning time to previous value
     group_->setPlanningTime(planning_time);
