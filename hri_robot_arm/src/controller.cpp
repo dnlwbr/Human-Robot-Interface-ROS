@@ -145,7 +145,7 @@ void ArmController::build_workscene()
     co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = 0.03;
     co_.primitive_poses[0].position.x = 0;
     co_.primitive_poses[0].position.y = 0.0;
-    co_.primitive_poses[0].position.z = -0.03/2.0 - 0.1;
+    co_.primitive_poses[0].position.z = -0.03/2.0 - 0.12;
     pub_co_.publish(co_);
     planning_scene_msg_.world.collision_objects.push_back(co_);
     planning_scene_msg_.is_diff = true;
@@ -171,17 +171,18 @@ void ArmController::add_obstacle()
     clear_obstacle();
 
     co_.id = "box";
-    co_.primitives.resize(1);
-    co_.primitive_poses.resize(1);
-    co_.primitives[0].type = shape_msgs::SolidPrimitive::BOX;
-    co_.primitives[0].dimensions.resize(geometric_shapes::SolidPrimitiveDimCount<shape_msgs::SolidPrimitive::BOX>::value);
+    co_.primitives.resize(2);
+    co_.primitive_poses.resize(2);
+    co_.primitives[1].type = shape_msgs::SolidPrimitive::BOX;
+    co_.primitives[1].dimensions.resize(geometric_shapes::SolidPrimitiveDimCount<shape_msgs::SolidPrimitive::BOX>::value);
     co_.operation = moveit_msgs::CollisionObject::ADD;
 
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_X] = size_.vector.x;
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = size_.vector.y;
-    co_.primitives[0].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = size_.vector.z;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_X] = size_.vector.x;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = size_.vector.y;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = size_.vector.z;
 
-    co_.primitive_poses[0].position = center_.pose.position;
+    co_.primitive_poses[1].position = center_.pose.position;
+    co_.primitive_poses[1].orientation = center_.pose.orientation;
 
     pub_co_.publish(co_);
     planning_scene_msg_.world.collision_objects.push_back(co_);
@@ -368,6 +369,9 @@ void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalCons
     size_.header = box->header;
     size_.vector = box->bbox.size;
     tf2::doTransform(size_, size_, tf_to_root);
+    size_.vector.x = std::abs(size_.vector.x);
+    size_.vector.y = std::abs(size_.vector.y);
+    size_.vector.z = std::abs(size_.vector.z);
 }
 
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
@@ -430,7 +434,7 @@ double ArmController::calc_radius() {
     radius = (size_.vector.x) > radius ? size_.vector.x : radius;
     radius = (size_.vector.y) > radius ? size_.vector.y : radius;
     radius = (size_.vector.z) > radius ? size_.vector.z : radius;
-    return 1.5 * radius;
+    return 2.0 * radius;
 }
 
 
