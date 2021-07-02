@@ -59,7 +59,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
     group_->setPoseReferenceFrame("root");
 //    group_->setEndEffectorLink(robot_type_ + "_end_effector");
     group_->setEndEffectorLink("realsense2_end_effector");
-//    group_->setMaxVelocityScalingFactor(0.5);
+    group_->setMaxVelocityScalingFactor(0.5);
 
     finger_client_ = new actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction>
             ("/" + robot_type_ + "_driver/fingers_action/finger_positions", false);
@@ -305,9 +305,6 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ROS_INFO_STREAM("Send robot to home position ...");
     group_->setNamedTarget("Home");
     group_->move();
-    ros::WallDuration(0.5).sleep();
-    gripper_group_->setNamedTarget("Close");
-    gripper_group_->move();
 
     ROS_INFO("Add bounding box as obstacle");
     add_obstacle();
@@ -327,6 +324,9 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ROS_INFO("Visualizing cartesian path (%.2f%% of the reachable waypoints included)",  fraction * 100.0);
 
     ROS_INFO_STREAM("Start recording ...");
+    gripper_group_->setNamedTarget("Open"); // Move the fingers out of the field of view of the camera
+    gripper_group_->move();
+    ros::WallDuration(0.5).sleep();
     group_->execute(trajectory); // Inspection/Evaluation does not work
 
     ROS_INFO_STREAM("Return to home position  ...");
