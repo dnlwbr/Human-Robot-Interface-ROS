@@ -35,6 +35,12 @@
 #include <moveit_msgs/ApplyPlanningScene.h>
 #include <moveit_msgs/DisplayTrajectory.h>
 
+// Camera
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
+
 
 namespace hri_arm
 {
@@ -45,6 +51,9 @@ namespace hri_arm
     public:
         ArmController(ros::NodeHandle &nh);
         ~ArmController();
+        void callback_camera(const sensor_msgs::ImageConstPtr& rgb_image,
+                             const sensor_msgs::ImageConstPtr& depth_image,
+                             const sensor_msgs::CameraInfoConstPtr& cam_info);
 
 
     private:
@@ -96,9 +105,10 @@ namespace hri_arm
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
 
-        // Bounding box
-        geometry_msgs::PoseStamped center_;
-        geometry_msgs::Vector3Stamped size_;
+        // Bounding boxes
+        vision_msgs::BoundingBox3D bbox_in_root_frame_;
+
+        bool recording_;
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
@@ -108,12 +118,15 @@ namespace hri_arm
         void clear_obstacle();
         void add_obstacle();
 
-        static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
+        static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         void record(const hri_robot_arm::RecordGoalConstPtr &goal);
         void convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box);
-        std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::PoseStamped& center, double radius);
+        std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
+
+        inline void start_recording() { recording_ = true;}
+        inline void stop_recording() { recording_ = false;}
     };
 }
 

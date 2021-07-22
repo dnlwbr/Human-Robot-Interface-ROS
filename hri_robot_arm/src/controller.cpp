@@ -28,7 +28,8 @@ tf::Quaternion EulerZYZ_to_Quaternion(double tz1, double ty, double tz2)
 ArmController::ArmController(ros::NodeHandle &nh):
         nh_(nh),
         tf_listener_(tf_buffer_),
-        action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false)
+        action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
+        recording_(false)
 {
     ros::NodeHandle pn("~");
 
@@ -177,12 +178,12 @@ void ArmController::add_obstacle()
     co_.primitives[1].dimensions.resize(geometric_shapes::SolidPrimitiveDimCount<shape_msgs::SolidPrimitive::BOX>::value);
     co_.operation = moveit_msgs::CollisionObject::ADD;
 
-    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_X] = size_.vector.x;
-    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = size_.vector.y;
-    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = size_.vector.z;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_X] = bbox_in_root_frame_.size.x;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Y] = bbox_in_root_frame_.size.y;
+    co_.primitives[1].dimensions[shape_msgs::SolidPrimitive::BOX_Z] = bbox_in_root_frame_.size.z;
 
-    co_.primitive_poses[1].position = center_.pose.position;
-    co_.primitive_poses[1].orientation = center_.pose.orientation;
+    co_.primitive_poses[1].position = bbox_in_root_frame_.center.position;
+    co_.primitive_poses[1].orientation = bbox_in_root_frame_.center.orientation;
 
     pub_co_.publish(co_);
     planning_scene_msg_.world.collision_objects.push_back(co_);
@@ -201,7 +202,7 @@ void ArmController::add_obstacle()
  * @param rot_gripper_z rotation along the z axis of the gripper reference frame (last joint rotation)
  * @return a pose defined in a spherical coordinates where origin is located at the target pose. Normally it is a pre_grasp/post_realease pose, where gripper axis (last joint axis) is pointing to the object (target_pose).
  */
-geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geometry_msgs::PoseStamped& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z)
+geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z)
 {
     geometry_msgs::PoseStamped pose_msg;
 
@@ -216,9 +217,9 @@ geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geom
     // computer the orientation of gripper w.r.t. fixed world (root) reference frame. The gripper (z axis) should point(open) to the grasp_pose.
     tf::Quaternion q = EulerZYZ_to_Quaternion(azimuth, polar, rot_gripper_z);
 
-    pose_msg.pose.position.x = targetpose_msg.pose.position.x + delta_x;
-    pose_msg.pose.position.y = targetpose_msg.pose.position.y + delta_y;
-    pose_msg.pose.position.z = targetpose_msg.pose.position.z + delta_z;
+    pose_msg.pose.position.x = targetpose_msg.position.x + delta_x;
+    pose_msg.pose.position.y = targetpose_msg.position.y + delta_y;
+    pose_msg.pose.position.z = targetpose_msg.position.z + delta_z;
     pose_msg.pose.orientation.x = q.x();
     pose_msg.pose.orientation.y = q.y();
     pose_msg.pose.orientation.z = q.z();
@@ -312,7 +313,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 
     ROS_INFO("Calculate waypoints ...");
     double radius = calc_radius();
-    std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(center_, radius);
+    std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(bbox_in_root_frame_.center, radius);
 
     ROS_INFO_STREAM("Go to start position  ...");
     group_->setPoseTarget(waypoints.front());
@@ -327,7 +328,9 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     gripper_group_->setNamedTarget("Open"); // Move the fingers out of the field of view of the camera
     gripper_group_->move();
     ros::WallDuration(0.5).sleep();
+    start_recording();
     group_->execute(trajectory); // Inspection/Evaluation does not work
+    stop_recording();
 
     ROS_INFO_STREAM("Return to home position  ...");
     group_->setNamedTarget("Home");
@@ -349,6 +352,8 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 
 void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box)
 {
+    geometry_msgs::Pose center;
+    geometry_msgs::Vector3 size;
     geometry_msgs::TransformStamped tf_to_root;
     try{
         tf_to_root = tf_buffer_.lookupTransform("root",
@@ -361,20 +366,20 @@ void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalCons
     }
 
     // Center pose
-    center_.header = box->header;
-    center_.pose = box->bbox.center;
-    tf2::doTransform(center_, center_, tf_to_root);
+    center = box->bbox.center;
+    tf2::doTransform(center, center, tf_to_root);
+    bbox_in_root_frame_.center = center;
 
     // Size
-    size_.header = box->header;
-    size_.vector = box->bbox.size;
-    tf2::doTransform(size_, size_, tf_to_root);
-    size_.vector.x = std::abs(size_.vector.x);
-    size_.vector.y = std::abs(size_.vector.y);
-    size_.vector.z = std::abs(size_.vector.z);
+    size = box->bbox.size;
+    tf2::doTransform(size, size, tf_to_root);
+    size.x = std::abs(size.x);
+    size.y = std::abs(size.y);
+    size.z = std::abs(size.z);
+    bbox_in_root_frame_.size = size;
 }
 
-std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::PoseStamped& center, double radius)
+std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::Pose& center, double radius)
 {
     // Create Cartesian Paths
     std::vector<geometry_msgs::Pose> waypoints; // end_effector_trajectory
@@ -395,7 +400,10 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
     {
         // Discretize the trajectory
         angle_rad -= diff_angle_rad; // clockwise rotation ("+" for counterclockwise)
-        target_pose = generate_gripper_align_pose(center_, radius, angle_rad, 3*M_PI/4, M_PI/2);
+        target_pose = generate_gripper_align_pose(center, radius, angle_rad, 3*M_PI/4, M_PI/2);
+
+        // Adjust target_pose
+        //target_pose.pose.position.z -= 0.05;
 
         // Check whether the pose is reachable
         group_->setPoseTarget(target_pose);
@@ -431,10 +439,19 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
 
 double ArmController::calc_radius() {
     double radius = 0.2; // Minimum distance to the object (realsense2 to end effector)
-    radius = (size_.vector.x) > radius ? size_.vector.x : radius;
-    radius = (size_.vector.y) > radius ? size_.vector.y : radius;
-    radius = (size_.vector.z) > radius ? size_.vector.z : radius;
-    return 2.0 * radius;
+    radius = (bbox_in_root_frame_.size.x) > radius ? bbox_in_root_frame_.size.x : radius;
+    radius = (bbox_in_root_frame_.size.y) > radius ? bbox_in_root_frame_.size.y : radius;
+    radius = (bbox_in_root_frame_.size.z) > radius ? bbox_in_root_frame_.size.z : radius;
+    return 3.0 * radius;
+}
+
+void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& rgb_image, const sensor_msgs::ImageConstPtr& depth_image, const sensor_msgs::CameraInfoConstPtr& cam_info)
+{
+    // Solve all of perception here...
+
+    if (recording_) {
+        // record
+    }
 }
 
 
@@ -446,6 +463,12 @@ int main(int argc, char **argv)
     spinner.start();
 
     hri_arm::ArmController arm_controller(node);
+
+    message_filters::Subscriber<sensor_msgs::Image> image_sub(node, "/realsense2/color/image_raw", 1);
+    message_filters::Subscriber<sensor_msgs::Image> depth_sub(node, "/realsense2/aligned_depth_to_color/image_raw", 1);
+    message_filters::Subscriber<sensor_msgs::CameraInfo> info_sub(node, "/realsense2/color/camera_info", 1);
+    message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> sync(image_sub, depth_sub, info_sub, 10);
+    sync.registerCallback(boost::bind(&ArmController::callback_camera, &arm_controller, _1, _2, _3));
 
     ros::waitForShutdown();
     return 0;
