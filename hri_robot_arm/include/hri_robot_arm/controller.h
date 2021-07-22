@@ -107,6 +107,7 @@ namespace hri_arm
 
         // Bounding boxes
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
+        vision_msgs::BoundingBox3D bbox_in_realsense_frame_;
 
         bool recording_;
 
@@ -121,7 +122,7 @@ namespace hri_arm
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         void record(const hri_robot_arm::RecordGoalConstPtr &goal);
-        void convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box);
+        void convert_bb_from_to(vision_msgs::BoundingBox3D &box, const std::string& source_frame, const std::string& target_frame);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
 

@@ -294,7 +294,8 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 {
     // Convert bounding box to root frame
-    convert_bb_to_root_frame(goal);
+    bbox_in_root_frame_ = goal->bbox;
+    convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
 
     ROS_INFO_STREAM("Build workspace ...");
     clear_workscene();
@@ -350,14 +351,14 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ROS_INFO_STREAM("Finished.");
 }
 
-void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalConstPtr &box)
+void ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
+                                       const std::string& source_frame,
+                                       const std::string& target_frame)
 {
-    geometry_msgs::Pose center;
-    geometry_msgs::Vector3 size;
-    geometry_msgs::TransformStamped tf_to_root;
+    geometry_msgs::TransformStamped transform;
     try{
-        tf_to_root = tf_buffer_.lookupTransform("root",
-                                                box->header.frame_id,
+        transform = tf_buffer_.lookupTransform(target_frame,
+                                                source_frame,
                                                 ros::Time(0),
                                                 ros::Duration(1.0));
     }
@@ -366,17 +367,13 @@ void ArmController::convert_bb_to_root_frame(const hri_robot_arm::RecordGoalCons
     }
 
     // Center pose
-    center = box->bbox.center;
-    tf2::doTransform(center, center, tf_to_root);
-    bbox_in_root_frame_.center = center;
+    tf2::doTransform(box.center, box.center, transform);
 
     // Size
-    size = box->bbox.size;
-    tf2::doTransform(size, size, tf_to_root);
-    size.x = std::abs(size.x);
-    size.y = std::abs(size.y);
-    size.z = std::abs(size.z);
-    bbox_in_root_frame_.size = size;
+    tf2::doTransform(box.size, box.size, transform);
+    box.size.x = std::abs(box.size.x);
+    box.size.y = std::abs(box.size.y);
+    box.size.z = std::abs(box.size.z);
 }
 
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::Pose& center, double radius)
@@ -447,7 +444,9 @@ double ArmController::calc_radius() {
 
 void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& rgb_image, const sensor_msgs::ImageConstPtr& depth_image, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {
-    // Solve all of perception here...
+    // Convert bounding box
+    bbox_in_realsense_frame_ = bbox_in_root_frame_;
+    convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_end_effector");
 
     if (recording_) {
         // record
