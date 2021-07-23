@@ -455,7 +455,7 @@ void CloudSegmentation::crop_image_to_bb() {
 
     // Crop image to 2D bounding box
     cv::Rect crop_region(x, y, width, height);
-    cv_bridge::CvImage rgb_image_cropped = *rgb_image;
+    cv_bridge::CvImage rgb_image_cropped;
     rgb_image_cropped.image = rgb_image->image(crop_region);
     rgb_image_cropped_msg = rgb_image_cropped.toImageMsg();
 
