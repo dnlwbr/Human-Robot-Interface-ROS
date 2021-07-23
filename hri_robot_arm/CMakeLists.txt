@@ -22,6 +22,8 @@ find_package(catkin REQUIRED COMPONENTS
   eigen_conversions
   tf2_ros
   vision_msgs
+  cv_bridge
+  image_geometry
 )
 
 find_package(Boost REQUIRED system filesystem date_time thread)

@@ -29,7 +29,9 @@ ArmController::ArmController(ros::NodeHandle &nh):
         nh_(nh),
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
-        recording_(false)
+        isRecording_(false),
+        data_path_("~/Pictures/object_data/"),
+        class_("cup")
 {
     ros::NodeHandle pn("~");
 
@@ -329,6 +331,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     gripper_group_->setNamedTarget("Open"); // Move the fingers out of the field of view of the camera
     gripper_group_->move();
     ros::WallDuration(0.5).sleep();
+    update_directory();
     start_recording();
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
@@ -442,16 +445,113 @@ double ArmController::calc_radius() {
     return 3.0 * radius;
 }
 
-void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& rgb_image, const sensor_msgs::ImageConstPtr& depth_image, const sensor_msgs::CameraInfoConstPtr& cam_info)
+void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, const sensor_msgs::ImageConstPtr& depth_msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {
-    // Convert bounding box
-    bbox_in_realsense_frame_ = bbox_in_root_frame_;
-    convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_end_effector");
+    if (isRecording_) {
+        // Convert bounding box
+        bbox_in_realsense_frame_ = bbox_in_root_frame_;
+        convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_end_effector");
 
-    if (recording_) {
-        // record
+        // Calculate 3D corners
+        cv::Point3d minPoint3D;
+        cv::Point3d maxPoint3D;
+        minPoint3D = cv::Point3d(bbox_in_realsense_frame_.center.position.x - bbox_in_realsense_frame_.size.x / 2,
+                                 bbox_in_realsense_frame_.center.position.y - bbox_in_realsense_frame_.size.y / 2,
+                                 bbox_in_realsense_frame_.center.position.z - bbox_in_realsense_frame_.size.z / 2);
+        maxPoint3D = cv::Point3d(bbox_in_realsense_frame_.center.position.x + bbox_in_realsense_frame_.size.x / 2,
+                                 bbox_in_realsense_frame_.center.position.y + bbox_in_realsense_frame_.size.y / 2,
+                                 bbox_in_realsense_frame_.center.position.z + bbox_in_realsense_frame_.size.z / 2);
+
+        std::vector<cv::Point3d> corners;
+        corners.emplace_back(minPoint3D.x, minPoint3D.y, minPoint3D.z);
+        corners.emplace_back(minPoint3D.x, minPoint3D.y, maxPoint3D.z);
+        corners.emplace_back(minPoint3D.x, maxPoint3D.y, minPoint3D.z);
+        corners.emplace_back(maxPoint3D.x, minPoint3D.y, minPoint3D.z);
+        corners.emplace_back(maxPoint3D.x, maxPoint3D.y, minPoint3D.z);
+        corners.emplace_back(maxPoint3D.x, minPoint3D.y, maxPoint3D.z);
+        corners.emplace_back(minPoint3D.x, maxPoint3D.y, maxPoint3D.z);
+        corners.emplace_back(maxPoint3D.x, maxPoint3D.y, maxPoint3D.z);
+
+        // Project 3D corners on 2D plane
+        image_geometry::PinholeCameraModel cam_model;
+        cam_model.fromCameraInfo(cam_info);
+        std::vector<cv::Point2d> projected_corners;
+        for (auto & corner : corners) {
+            cv::Point3d point3D(corner.x, corner.y, corner.z);
+            cv::Point2d point2D = cam_model.project3dToPixel(point3D);
+            projected_corners.push_back(point2D);
+        }
+
+        // Calculate 2D corners of box
+        double inf = std::numeric_limits<double>::infinity();
+        cv::Point2d minPoint2D(inf, inf);
+        cv::Point2d maxPoint2D(-inf, -inf);
+        for (auto & point : projected_corners)
+        {
+            if (point.x < minPoint2D.x) { minPoint2D.x = point.x; }
+            if (point.x > maxPoint2D.x) { maxPoint2D.x = point.x; }
+            if (point.y < minPoint2D.y) { minPoint2D.y = point.y; }
+            if (point.y > maxPoint2D.y) { maxPoint2D.y = point.y; }
+        }
+        if (minPoint2D.x < 0) { minPoint2D.x = 0; }
+        if (maxPoint2D.x > img_msg->width) { maxPoint2D.x = img_msg->width; }
+        if (minPoint2D.y < 0) { minPoint2D.y = 0; }
+        if (maxPoint2D.y > img_msg->height) { maxPoint2D.y = img_msg->height; }
+
+        // Crop image to 2D bounding box
+        int x = (int)minPoint2D.x;
+        int y = (int)minPoint2D.y;
+        int width = (int)(maxPoint2D.x - minPoint2D.x);
+        int height = (int)(maxPoint2D.y - minPoint2D.y);
+
+        boost::shared_ptr<const cv_bridge::CvImage> rgb_image;
+        boost::shared_ptr<const cv_bridge::CvImage> depth_image;
+        try
+        {
+            // Convert message to CvImage
+            rgb_image = cv_bridge::toCvShare(img_msg);
+            depth_image = cv_bridge::toCvShare(depth_msg);
+        }
+        catch (cv_bridge::Exception& e)
+        {
+            ROS_ERROR("cv_bridge exception: %s", e.what());
+        }
+        cv::Rect crop_region(x, y, width, height);
+        cv_bridge::CvImage rgb_image_cropped;
+        cv_bridge::CvImage depth_image_cropped;
+        rgb_image_cropped.image = rgb_image->image(crop_region);
+        depth_image_cropped.image = depth_image->image(crop_region);
+
+        // Store images and transformation
+        std::stringstream filename;
+        filename << std::setw(3) << std::setfill('0') << img_counter_;
+        cv::imwrite(current_path_ + filename.str() + "_rgb.png", rgb_image_cropped.image);
+        cv::imwrite(current_path_ + filename.str() + "_depth.png", rgb_image_cropped.image);
+        img_counter_++;
+        //TODO Get Transformation from bbox_in_realsense_frame_
     }
 }
+
+void ArmController::update_directory() {
+    current_path_ = data_path_ + "/" + class_;
+    if (!boost::filesystem::exists(current_path_)) {
+        boost::filesystem::create_directories(current_path_);
+        current_path_.append("/" + class_ + "00");
+        boost::filesystem::create_directories(current_path_);
+    }
+    else
+    {
+        std::string path(current_path_);
+        for (int i = 0; boost::filesystem::exists(path) && i < 100; ++i) {
+            std::stringstream ss;
+            ss << current_path_ << "/" << class_ << std::setw(2) << std::setfill('0') << i;
+            path = ss.str();
+        }
+        current_path_ = path;
+        boost::filesystem::create_directories(current_path_);
+    }
+}
+
 
 
 int main(int argc, char **argv)

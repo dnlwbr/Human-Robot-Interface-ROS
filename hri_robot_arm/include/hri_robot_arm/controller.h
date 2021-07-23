@@ -41,6 +41,12 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 
+#include <opencv2/opencv.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <image_geometry/pinhole_camera_model.h>
+
+#include <boost/filesystem.hpp>
+
 
 namespace hri_arm
 {
@@ -109,7 +115,12 @@ namespace hri_arm
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
         vision_msgs::BoundingBox3D bbox_in_realsense_frame_;
 
-        bool recording_;
+        // Recordings
+        std::string data_path_;
+        std::string current_path_;
+        std::string class_;
+        bool isRecording_;
+        unsigned int img_counter_;
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
@@ -126,8 +137,9 @@ namespace hri_arm
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
 
-        inline void start_recording() { recording_ = true;}
-        inline void stop_recording() { recording_ = false;}
+        inline void start_recording() { img_counter_ = 0; isRecording_ = true;}
+        inline void stop_recording() { isRecording_ = false;}
+        void update_directory();
     };
 }
 
