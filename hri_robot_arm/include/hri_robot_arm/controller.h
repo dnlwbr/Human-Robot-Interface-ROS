@@ -90,7 +90,7 @@ namespace hri_arm
         // create messages that are used to published feedback/result
         hri_robot_arm::RecordFeedback feedback_;
         hri_robot_arm::RecordResult result_;
-        double percentage_reachable_;
+        double percentage_reachable_{};
 
         //
         std::vector<std::string> joint_names_;
@@ -120,7 +120,7 @@ namespace hri_arm
         std::string current_path_;
         std::string class_;
         bool isRecording_;
-        unsigned int img_counter_;
+        unsigned int img_counter_{};
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);

@@ -350,7 +350,14 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     clear_workscene();
     ros::WallDuration(0.5).sleep();
     result_.success = percentage_reachable_ > 60;
-    action_server_.setSucceeded(result_);
+    if (result_.success == true)
+    {
+        action_server_.setSucceeded(result_);
+    }
+    else
+    {
+        action_server_.setAborted(result_);
+    }
     ROS_INFO_STREAM("Finished.");
 }
 
