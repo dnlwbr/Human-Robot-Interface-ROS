@@ -8,7 +8,6 @@
 CloudSegmentation::CloudSegmentation()
     : cloud_incoming(new PointCloudT),
       cloud_segmented(new PointCloudT),
-      rgb_image(new cv_bridge::CvImage),
       rgb_image_cropped_msg(new sensor_msgs::Image),
       rgb_camera_info(new sensor_msgs::CameraInfo),
       tf_listener(tf_buffer) {
@@ -59,7 +58,8 @@ void CloudSegmentation::callback_rgbImage(sensor_msgs::Image::ConstPtr const & i
     // Convert message to CvImage
     try
     {
-        rgb_image = cv_bridge::toCvCopy(img_msg, "bgr8");
+        //rgb_image = cv_bridge::toCvCopy(img_msg, "bgr8");
+        rgb_image = cv_bridge::toCvShare(img_msg);
         *rgb_camera_info = *info_msg;
 
         if (!isRGBImageInitialized) {
@@ -455,8 +455,8 @@ void CloudSegmentation::crop_image_to_bb() {
 
     // Crop image to 2D bounding box
     cv::Rect crop_region(x, y, width, height);
-    cv_bridge::CvImage rgb_image_cropped;
-    rgb_image_cropped.image = rgb_image->image(crop_region);
+    cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
+    rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
     rgb_image_cropped_msg = rgb_image_cropped.toImageMsg();
 
     // Fill header

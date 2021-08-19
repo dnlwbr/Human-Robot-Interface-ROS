@@ -83,7 +83,7 @@ public:
 private:
     PointT gazeHitPoint;
     PointCloudT::ConstPtr cloud_incoming;
-    boost::shared_ptr<cv_bridge::CvImage> rgb_image;
+    boost::shared_ptr<const cv_bridge::CvImage> rgb_image;
     sensor_msgs::CameraInfo::Ptr rgb_camera_info;
     std::vector<cv::Point2d> bbox_2d;
 
