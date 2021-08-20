@@ -30,7 +30,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
         isRecording_(false),
-        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data/")
+        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data")
 {
     ros::NodeHandle pn("~");
 
@@ -294,8 +294,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 
 void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 {
-    ROS_INFO_STREAM("Goal received.");
-    ROS_INFO_STREAM(goal->class_name);
+    ROS_INFO_STREAM("Goal received for class \"" + goal->class_name + "\"");
 
     // Set class name
     if (goal->class_name.empty())
@@ -311,14 +310,14 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     bbox_in_root_frame_ = goal->bbox;
     convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
 
-    ROS_INFO_STREAM("Build workspace ...");
+    ROS_INFO_STREAM("Build workspace");
     clear_workscene();
     ros::WallDuration(0.5).sleep();
     build_workscene();
     ros::WallDuration(0.5).sleep();
     group_->clearPathConstraints();
 
-    ROS_INFO_STREAM("Send robot to home position ...");
+    ROS_INFO_STREAM("Send robot to home position");
     group_->setNamedTarget("Home");
     group_->move();
 
@@ -326,20 +325,20 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     add_obstacle();
     ros::WallDuration(0.5).sleep();
 
-    ROS_INFO("Calculate waypoints ...");
+    ROS_INFO("Calculate waypoints");
     double radius = calc_radius();
     std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(bbox_in_root_frame_.center, radius);
 
-    ROS_INFO_STREAM("Go to start position  ...");
+    ROS_INFO_STREAM("Go to start position");
     group_->setPoseTarget(waypoints.front());
     group_->move(); // evaluate_plan(*group_);
 
-    ROS_INFO("Compute path ...");
+    ROS_INFO("Compute path");
     moveit_msgs::RobotTrajectory trajectory;
     double fraction = group_->computeCartesianPath(waypoints, 0.01,5.0, trajectory);
     ROS_INFO("Visualizing cartesian path (%.2f%% of the reachable waypoints included)",  fraction * 100.0);
 
-    ROS_INFO_STREAM("Start recording ...");
+    ROS_INFO_STREAM("Start recording...");
     gripper_group_->setNamedTarget("Open"); // Move the fingers out of the field of view of the camera
     gripper_group_->move();
     ros::WallDuration(0.5).sleep();
@@ -348,7 +347,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
 
-    ROS_INFO_STREAM("Return to home position  ...");
+    ROS_INFO_STREAM("Return to home position");
     group_->setNamedTarget("Home");
     group_->move();
 
@@ -370,7 +369,8 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     {
         action_server_.setAborted(result_);
     }
-    ROS_INFO_STREAM("Finished.");
+    ROS_INFO_STREAM("Finished");
+    ROS_INFO_STREAM("Waiting for new goal...");
 }
 
 void ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
@@ -448,7 +448,7 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
     // Concatenate the valid waypoints
     waypoints.insert(waypoints.begin(), waypoints2.begin(), waypoints2.end());
     percentage_reachable_ = 100.0 * (float)waypoints.size() / (360/angle_resolution_deg);
-    ROS_INFO("%.2f%% of the %zu waypoints are reachable.", percentage_reachable_, waypoints.size());
+    ROS_INFO("%zu of the %.0f waypoints are reachable (%.2f%%)", waypoints.size(), 360/angle_resolution_deg, percentage_reachable_);
 
     // Reset planning time to previous value
     group_->setPlanningTime(planning_time);
@@ -568,6 +568,7 @@ void ArmController::update_directory() {
         current_path_ = path;
         boost::filesystem::create_directories(current_path_);
     }
+    ROS_INFO_STREAM("Output path: " + current_path_);
 }
 
 
