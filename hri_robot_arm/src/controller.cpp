@@ -30,8 +30,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
         isRecording_(false),
-        data_path_("~/Pictures/object_data/"),
-        class_("cup")
+        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data/")
 {
     ros::NodeHandle pn("~");
 
@@ -295,6 +294,19 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 
 void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 {
+    ROS_INFO_STREAM("Goal received.");
+    ROS_INFO_STREAM(goal->class_name);
+
+    // Set class name
+    if (goal->class_name.empty())
+    {
+        result_.success = false;
+        action_server_.setAborted(result_);
+        ROS_INFO_STREAM("No class name provided. Abort.");
+        return;
+    }
+    class_ = goal->class_name;
+
     // Convert bounding box to root frame
     bbox_in_root_frame_ = goal->bbox;
     convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
@@ -526,14 +538,14 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         cv::Rect crop_region(x, y, width, height);
         cv_bridge::CvImage rgb_image_cropped;
         cv_bridge::CvImage depth_image_cropped;
-        rgb_image_cropped.image = rgb_image->image(crop_region);
-        depth_image_cropped.image = depth_image->image(crop_region);
+        rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
+        depth_image->image(crop_region).copyTo(depth_image_cropped.image);
 
         // Store images and transformation
         std::stringstream filename;
         filename << std::setw(3) << std::setfill('0') << img_counter_;
-        cv::imwrite(current_path_ + filename.str() + "_rgb.png", rgb_image_cropped.image);
-        cv::imwrite(current_path_ + filename.str() + "_depth.png", rgb_image_cropped.image);
+        cv::imwrite(current_path_ + "/" + filename.str() + "_rgb.png", rgb_image_cropped.image);
+        cv::imwrite(current_path_ + "/" + filename.str() + "_depth.png", depth_image_cropped.image);
         img_counter_++;
         //TODO Get Transformation from bbox_in_realsense_frame_
     }
@@ -542,7 +554,6 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
 void ArmController::update_directory() {
     current_path_ = data_path_ + "/" + class_;
     if (!boost::filesystem::exists(current_path_)) {
-        boost::filesystem::create_directories(current_path_);
         current_path_.append("/" + class_ + "00");
         boost::filesystem::create_directories(current_path_);
     }
