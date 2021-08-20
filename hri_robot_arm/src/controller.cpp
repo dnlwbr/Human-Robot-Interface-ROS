@@ -346,6 +346,8 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     start_recording();
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
+    gripper_group_->setNamedTarget("Close"); // Save space to not bump into anywhere
+    gripper_group_->move();
 
     ROS_INFO_STREAM("Return to home position");
     group_->setNamedTarget("Home");
@@ -469,7 +471,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
     if (isRecording_) {
         // Convert bounding box
         bbox_in_realsense_frame_ = bbox_in_root_frame_;
-        convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_end_effector");
+        convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_color_optical_frame");
 
         // Calculate 3D corners
         cv::Point3d minPoint3D;
@@ -481,7 +483,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
                                  bbox_in_realsense_frame_.center.position.y + bbox_in_realsense_frame_.size.y / 2,
                                  bbox_in_realsense_frame_.center.position.z + bbox_in_realsense_frame_.size.z / 2);
 
-        std::vector<cv::Point3d> corners;
+        std::vector<cv::Point3d> corners = std::vector<cv::Point3d>();
         corners.emplace_back(minPoint3D.x, minPoint3D.y, minPoint3D.z);
         corners.emplace_back(minPoint3D.x, minPoint3D.y, maxPoint3D.z);
         corners.emplace_back(minPoint3D.x, maxPoint3D.y, minPoint3D.z);
@@ -494,7 +496,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         // Project 3D corners on 2D plane
         image_geometry::PinholeCameraModel cam_model;
         cam_model.fromCameraInfo(cam_info);
-        std::vector<cv::Point2d> projected_corners;
+        std::vector<cv::Point2d> projected_corners = std::vector<cv::Point2d>();
         for (auto & corner : corners) {
             cv::Point3d point3D(corner.x, corner.y, corner.z);
             cv::Point2d point2D = cam_model.project3dToPixel(point3D);
@@ -507,15 +509,15 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         cv::Point2d maxPoint2D(-inf, -inf);
         for (auto & point : projected_corners)
         {
-            if (point.x < minPoint2D.x) { minPoint2D.x = point.x; }
-            if (point.x > maxPoint2D.x) { maxPoint2D.x = point.x; }
-            if (point.y < minPoint2D.y) { minPoint2D.y = point.y; }
-            if (point.y > maxPoint2D.y) { maxPoint2D.y = point.y; }
+            minPoint2D.x = (point.x < minPoint2D.x) ? point.x : minPoint2D.x;
+            minPoint2D.y = (point.y < minPoint2D.y) ? point.y : minPoint2D.y;
+            maxPoint2D.x = (point.x > maxPoint2D.x) ? point.x : maxPoint2D.x;
+            maxPoint2D.y = (point.y > maxPoint2D.y) ? point.y : maxPoint2D.y;
         }
-        if (minPoint2D.x < 0) { minPoint2D.x = 0; }
-        if (maxPoint2D.x > img_msg->width) { maxPoint2D.x = img_msg->width; }
-        if (minPoint2D.y < 0) { minPoint2D.y = 0; }
-        if (maxPoint2D.y > img_msg->height) { maxPoint2D.y = img_msg->height; }
+        minPoint2D.x = (minPoint2D.x < 0) ? 0 : minPoint2D.x;
+        minPoint2D.y = (minPoint2D.y < 0) ? 0 : minPoint2D.y;
+        maxPoint2D.x = (maxPoint2D.x >= img_msg->width) ? img_msg->width - 1 : maxPoint2D.x;
+        maxPoint2D.y = (maxPoint2D.y >= img_msg->height) ? img_msg->height - 1 : maxPoint2D.y;
 
         // Crop image to 2D bounding box
         int x = (int)minPoint2D.x;
