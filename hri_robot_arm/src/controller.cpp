@@ -346,6 +346,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     start_recording();
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
+    ROS_INFO_STREAM("Stop recording");
     gripper_group_->setNamedTarget("Close"); // Save space to not bump into anywhere
     gripper_group_->move();
 
@@ -379,25 +380,27 @@ void ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
                                        const std::string& source_frame,
                                        const std::string& target_frame)
 {
+    // Get transform
+    geometry_msgs::TransformStamped transform = get_transform_from_to(source_frame, target_frame);
+
+    // Transform center pose
+    tf2::doTransform(box.center, box.center, transform);
+}
+
+geometry_msgs::TransformStamped ArmController::get_transform_from_to(const std::string& source_frame,
+                                                                     const std::string& target_frame)
+{
     geometry_msgs::TransformStamped transform;
     try{
         transform = tf_buffer_.lookupTransform(target_frame,
-                                                source_frame,
-                                                ros::Time(0),
-                                                ros::Duration(1.0));
+                                               source_frame,
+                                               ros::Time(0),
+                                               ros::Duration(1.0));
     }
     catch (tf2::TransformException &ex) {
         ROS_WARN("Failure: %s", ex.what());
     }
-
-    // Center pose
-    tf2::doTransform(box.center, box.center, transform);
-
-    // Size
-    tf2::doTransform(box.size, box.size, transform);
-    box.size.x = std::abs(box.size.x);
-    box.size.y = std::abs(box.size.y);
-    box.size.z = std::abs(box.size.z);
+    return transform;
 }
 
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::Pose& center, double radius)
@@ -474,32 +477,42 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_color_optical_frame");
 
         // Calculate 3D corners
-        cv::Point3d minPoint3D;
-        cv::Point3d maxPoint3D;
-        minPoint3D = cv::Point3d(bbox_in_realsense_frame_.center.position.x - bbox_in_realsense_frame_.size.x / 2,
-                                 bbox_in_realsense_frame_.center.position.y - bbox_in_realsense_frame_.size.y / 2,
-                                 bbox_in_realsense_frame_.center.position.z - bbox_in_realsense_frame_.size.z / 2);
-        maxPoint3D = cv::Point3d(bbox_in_realsense_frame_.center.position.x + bbox_in_realsense_frame_.size.x / 2,
-                                 bbox_in_realsense_frame_.center.position.y + bbox_in_realsense_frame_.size.y / 2,
-                                 bbox_in_realsense_frame_.center.position.z + bbox_in_realsense_frame_.size.z / 2);
+        Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame_.center.position.x,
+                                                   bbox_in_realsense_frame_.center.position.y,
+                                                   bbox_in_realsense_frame_.center.position.z);
+        Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame_.center.orientation.w,
+                                                            bbox_in_realsense_frame_.center.orientation.x,
+                                                            bbox_in_realsense_frame_.center.orientation.y,
+                                                            bbox_in_realsense_frame_.center.orientation.z);
+        Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame_.size.x,
+                                               bbox_in_realsense_frame_.size.y,
+                                               bbox_in_realsense_frame_.size.z);
 
         std::vector<cv::Point3d> corners = std::vector<cv::Point3d>();
-        corners.emplace_back(minPoint3D.x, minPoint3D.y, minPoint3D.z);
-        corners.emplace_back(minPoint3D.x, minPoint3D.y, maxPoint3D.z);
-        corners.emplace_back(minPoint3D.x, maxPoint3D.y, minPoint3D.z);
-        corners.emplace_back(maxPoint3D.x, minPoint3D.y, minPoint3D.z);
-        corners.emplace_back(maxPoint3D.x, maxPoint3D.y, minPoint3D.z);
-        corners.emplace_back(maxPoint3D.x, minPoint3D.y, maxPoint3D.z);
-        corners.emplace_back(minPoint3D.x, maxPoint3D.y, maxPoint3D.z);
-        corners.emplace_back(maxPoint3D.x, maxPoint3D.y, maxPoint3D.z);
+        Eigen::Vector3d Point3D;
+        Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), -size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), -size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), -size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), -size.z()) / 2);
+        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
 
         // Project 3D corners on 2D plane
         image_geometry::PinholeCameraModel cam_model;
         cam_model.fromCameraInfo(cam_info);
         std::vector<cv::Point2d> projected_corners = std::vector<cv::Point2d>();
         for (auto & corner : corners) {
-            cv::Point3d point3D(corner.x, corner.y, corner.z);
-            cv::Point2d point2D = cam_model.project3dToPixel(point3D);
+            cv::Point2d point2D = cam_model.project3dToPixel(corner);
             projected_corners.push_back(point2D);
         }
 
@@ -520,11 +533,6 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         maxPoint2D.y = (maxPoint2D.y >= img_msg->height) ? img_msg->height - 1 : maxPoint2D.y;
 
         // Crop image to 2D bounding box
-        int x = (int)minPoint2D.x;
-        int y = (int)minPoint2D.y;
-        int width = (int)(maxPoint2D.x - minPoint2D.x);
-        int height = (int)(maxPoint2D.y - minPoint2D.y);
-
         boost::shared_ptr<const cv_bridge::CvImage> rgb_image;
         boost::shared_ptr<const cv_bridge::CvImage> depth_image;
         try
@@ -537,6 +545,15 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         {
             ROS_ERROR("cv_bridge exception: %s", e.what());
         }
+
+        double margin_factor = 1.3;
+        cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
+                                         (int)(maxPoint2D.y + minPoint2D.y) / 2);
+        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor);
+        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor);
+        int x = (int)(center.x - width/2);
+        int y = (int)(center.y - height/2);
+
         cv::Rect crop_region(x, y, width, height);
         cv_bridge::CvImage rgb_image_cropped;
         cv_bridge::CvImage depth_image_cropped;

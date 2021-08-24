@@ -55,7 +55,7 @@ namespace hri_arm
     class ArmController
     {
     public:
-        ArmController(ros::NodeHandle &nh);
+        explicit ArmController(ros::NodeHandle &nh);
         ~ArmController();
         void callback_camera(const sensor_msgs::ImageConstPtr& rgb_image,
                              const sensor_msgs::ImageConstPtr& depth_image,
@@ -133,6 +133,7 @@ namespace hri_arm
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         void record(const hri_robot_arm::RecordGoalConstPtr &goal);
+        geometry_msgs::TransformStamped get_transform_from_to(const std::string& source_frame, const std::string& target_frame);
         void convert_bb_from_to(vision_msgs::BoundingBox3D &box, const std::string& source_frame, const std::string& target_frame);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
