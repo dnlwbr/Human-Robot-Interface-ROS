@@ -46,6 +46,7 @@
 #include <image_geometry/pinhole_camera_model.h>
 
 #include <boost/filesystem.hpp>
+#include <iostream>
 
 
 namespace hri_arm
@@ -111,6 +112,9 @@ namespace hri_arm
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
 
+        // Output file stream to write tf to file
+        std::ofstream tf_file_stream_;
+
         // Bounding boxes
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
         vision_msgs::BoundingBox3D bbox_in_realsense_frame_;
@@ -134,7 +138,7 @@ namespace hri_arm
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         void record(const hri_robot_arm::RecordGoalConstPtr &goal);
         geometry_msgs::TransformStamped get_transform_from_to(const std::string& source_frame, const std::string& target_frame);
-        void convert_bb_from_to(vision_msgs::BoundingBox3D &box, const std::string& source_frame, const std::string& target_frame);
+        geometry_msgs::TransformStamped convert_bb_from_to(vision_msgs::BoundingBox3D &box, const std::string& source_frame, const std::string& target_frame);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
 

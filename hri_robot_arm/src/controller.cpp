@@ -376,7 +376,14 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ROS_INFO_STREAM("Waiting for new goal...");
 }
 
-void ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
+/**
+ * @brief Converts a bounding box between two frames and additionally returns used transformation.
+ * @param[in,out] box Inplace conversion of box from source_frame to target_frame
+ * @param[in] source_frame The frame where the data originated
+ * @param[in] target_frame The frame to which data should be transformed
+ * @return Transfrom from source_frame to target_frame
+ */
+geometry_msgs::TransformStamped ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
                                        const std::string& source_frame,
                                        const std::string& target_frame)
 {
@@ -385,6 +392,8 @@ void ArmController::convert_bb_from_to(vision_msgs::BoundingBox3D &box,
 
     // Transform center pose
     tf2::doTransform(box.center, box.center, transform);
+
+    return transform;
 }
 
 geometry_msgs::TransformStamped ArmController::get_transform_from_to(const std::string& source_frame,
@@ -469,12 +478,16 @@ double ArmController::calc_radius() {
     return 3.0 * radius;
 }
 
-void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, const sensor_msgs::ImageConstPtr& depth_msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
+void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
+                                    const sensor_msgs::ImageConstPtr& depth_msg,
+                                    const sensor_msgs::CameraInfoConstPtr& cam_info)
 {
     if (isRecording_) {
         // Convert bounding box
         bbox_in_realsense_frame_ = bbox_in_root_frame_;
-        convert_bb_from_to(bbox_in_realsense_frame_, "root", "realsense2_color_optical_frame");
+        geometry_msgs::TransformStamped tf_root_to_rs2 = convert_bb_from_to(bbox_in_realsense_frame_,
+                                                                            "root",
+                                                                            "realsense2_color_optical_frame");
 
         // Calculate 3D corners
         Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame_.center.position.x,
@@ -560,13 +573,28 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg, c
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
         depth_image->image(crop_region).copyTo(depth_image_cropped.image);
 
-        // Store images and transformation
+        // Save images to disk
         std::stringstream filename;
         filename << std::setw(3) << std::setfill('0') << img_counter_;
         cv::imwrite(current_path_ + "/" + filename.str() + "_rgb.png", rgb_image_cropped.image);
         cv::imwrite(current_path_ + "/" + filename.str() + "_depth.png", depth_image_cropped.image);
+
+        // Calc tf from box center to camera
+        tf2::Transform tf2_root_to_rs2, tf2_root_to_box, tf2_box_to_rs2;
+        tf2::fromMsg(tf_root_to_rs2.transform, tf2_root_to_rs2);
+        tf2::fromMsg(bbox_in_root_frame_.center, tf2_root_to_box);
+        tf2_box_to_rs2.mult(tf2_root_to_rs2, tf2_root_to_box.inverse());
+        geometry_msgs::Transform tf_box_to_rs2 = tf2::toMsg(tf2_box_to_rs2);
+
+        // Save transformation to disk
+        tf_file_stream_.open(current_path_ + "/" + filename.str() + "_tf.txt");
+        if(!tf_file_stream_) {
+            ROS_INFO_STREAM("Error: file could not be opened");
+        }
+        tf_file_stream_ << tf_box_to_rs2;
+        tf_file_stream_.close();
+
         img_counter_++;
-        //TODO Get Transformation from bbox_in_realsense_frame_
     }
 }
 
