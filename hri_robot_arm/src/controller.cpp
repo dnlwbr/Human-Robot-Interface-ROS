@@ -568,8 +568,8 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         int y = (int)(center.y - height/2);
 
         cv::Rect crop_region(x, y, width, height);
-        cv_bridge::CvImage rgb_image_cropped;
-        cv_bridge::CvImage depth_image_cropped;
+        cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
+        cv_bridge::CvImage depth_image_cropped = cv_bridge::CvImage(depth_image->header, depth_image->encoding);
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
         depth_image->image(crop_region).copyTo(depth_image_cropped.image);
 
