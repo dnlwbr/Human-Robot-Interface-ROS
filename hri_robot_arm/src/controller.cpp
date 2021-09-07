@@ -30,6 +30,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
         isRecording_(false),
+        isCamInfoSaved_(false),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data")
 {
     ros::NodeHandle pn("~");
@@ -603,6 +604,17 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         }
         tf_file_stream_ << tf_box_to_rs2;
         tf_file_stream_.close();
+
+        // Save camera info to disk (first time only)
+        if (!isCamInfoSaved_) {
+            tf_file_stream_.open(current_path_ + "/CameraInfo.txt");
+            if(!tf_file_stream_) {
+                ROS_INFO_STREAM("Error: file could not be opened");
+            }
+            tf_file_stream_ << *cam_info;
+            tf_file_stream_.close();
+            isCamInfoSaved_ = true;
+        }
 
         img_counter_++;
     }

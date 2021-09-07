@@ -124,6 +124,7 @@ namespace hri_arm
         std::string current_path_;
         std::string class_;
         bool isRecording_;
+        bool isCamInfoSaved_;
         unsigned int img_counter_{};
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
