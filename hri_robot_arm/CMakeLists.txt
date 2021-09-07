@@ -184,6 +184,7 @@ target_link_libraries(${PROJECT_NAME}_node
    ${catkin_LIBRARIES}
    ${Boost_LIBRARIES}
    ${kinova_driver_LIBRARIES}
+   yaml-cpp
 )
 
 #############

@@ -583,12 +583,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 //        cv::Mat f32Mat;
 //        depth_image_cropped.image.convertTo(f32Mat, CV_32FC1, 0.001);  // mm -> m
 //        depth_image_cropped.image = f32Mat;
-        tf_file_stream_.open(current_path_ + "/" + filename.str() + "_depth.txt");
-        if(!tf_file_stream_) {
-            ROS_INFO_STREAM("Error: file could not be opened");
-        }
-        tf_file_stream_ << depth_image_cropped.image;
-        tf_file_stream_.close();
+        save_to_disk(current_path_ + "/" + filename.str() + "_depth.txt", depth_image_cropped.image);
 
         // Calc tf from box center to camera
         tf2::Transform tf2_root_to_rs2, tf2_root_to_box, tf2_box_to_rs2;
@@ -598,21 +593,13 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         geometry_msgs::Transform tf_box_to_rs2 = tf2::toMsg(tf2_box_to_rs2);
 
         // Save transformation to disk
-        tf_file_stream_.open(current_path_ + "/" + filename.str() + "_tf.txt");
-        if(!tf_file_stream_) {
-            ROS_INFO_STREAM("Error: file could not be opened");
-        }
-        tf_file_stream_ << tf_box_to_rs2;
-        tf_file_stream_.close();
+        YAML::Node yaml_node = YAML::Node(tf_box_to_rs2);
+        save_to_disk(current_path_ + "/" + filename.str() + "_tf.yaml", yaml_node);
 
         // Save camera info to disk (first time only)
         if (!isCamInfoSaved_) {
-            tf_file_stream_.open(current_path_ + "/CameraInfo.txt");
-            if(!tf_file_stream_) {
-                ROS_INFO_STREAM("Error: file could not be opened");
-            }
-            tf_file_stream_ << *cam_info;
-            tf_file_stream_.close();
+            yaml_node = YAML::Node(*cam_info);
+            save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node);
             isCamInfoSaved_ = true;
         }
 
@@ -640,6 +627,15 @@ void ArmController::update_directory() {
     ROS_INFO_STREAM("Output path: " + current_path_);
 }
 
+template<class T>
+void ArmController::save_to_disk(const std::string& path, T data) {
+    fstream_out_.open(path);
+    if(!fstream_out_) {
+        ROS_INFO_STREAM("Error: \"" + path + "\" could not be opened");
+    }
+    fstream_out_ << data;
+    fstream_out_.close();
+}
 
 
 int main(int argc, char **argv)

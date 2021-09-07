@@ -47,6 +47,8 @@
 
 #include <boost/filesystem.hpp>
 #include <iostream>
+#include <yaml-cpp/yaml.h>
+#include "hri_robot_arm/yaml_conversions.h"
 
 
 namespace hri_arm
@@ -112,8 +114,8 @@ namespace hri_arm
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
 
-        // Output file stream to write tf to file
-        std::ofstream tf_file_stream_;
+        // Output file stream to write to disk
+        std::ofstream fstream_out_;
 
         // Bounding boxes
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
@@ -143,9 +145,10 @@ namespace hri_arm
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
         double calc_radius();
 
-        inline void start_recording() { img_counter_ = 0; isRecording_ = true;}
+        inline void start_recording() { img_counter_ = 0; isRecording_ = true; isCamInfoSaved_ = false;}
         inline void stop_recording() { isRecording_ = false;}
         void update_directory();
+        template<class T> void save_to_disk(const std::string& path, T data);
     };
 }
 
