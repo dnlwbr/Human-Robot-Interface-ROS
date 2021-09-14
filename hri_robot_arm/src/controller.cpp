@@ -31,6 +31,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
         isRecording_(false),
         isCamInfoSaved_(false),
+        crop_factor_(0.8),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data")
 {
     ros::NodeHandle pn("~");
@@ -437,7 +438,7 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
         target_pose = generate_gripper_align_pose(center, radius, angle_rad, 3*M_PI/4, M_PI/2);
 
         // Adjust target_pose
-        //target_pose.pose.position.z -= 0.05;
+        //target_pose.pose.position.z -= 0.05; // TODO?
 
         // Check whether the pose is reachable
         group_->setPoseTarget(target_pose);
@@ -560,13 +561,11 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             ROS_ERROR("cv_bridge exception: %s", e.what());
         }
 
-        double margin_factor = 1.3;
-        cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
-                                         (int)(maxPoint2D.y + minPoint2D.y) / 2);
-        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor);
-        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor);
-        int x = (int)(center.x - width/2);
-        int y = (int)(center.y - height/2);
+        cv::Point2d center = cv::Point2d(img_msg->width/2.0,img_msg->height/2.0);
+        auto width = (int)(img_msg->width * crop_factor_);
+        auto height = (int)(img_msg->height * crop_factor_);
+        auto x = (int)(center.x - (img_msg->width * crop_factor_)/2.0);
+        auto y = (int)(center.y - (img_msg->height * crop_factor_)/2.0);
 
         cv::Rect crop_region(x, y, width, height);
         cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
@@ -598,7 +597,17 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 
         // Save camera info to disk (first time only)
         if (!isCamInfoSaved_) {
-            yaml_node = YAML::Node(*cam_info);
+            sensor_msgs::CameraInfo cam_info_crop = *cam_info;
+            if (crop_factor_ != 1) {
+                // Adjust the camera intrinsics to the cropped images
+                cam_info_crop.height = height;
+                cam_info_crop.width = width;
+                cam_info_crop.K.elems[2] = cam_info_crop.K.elems[2] - (img_msg->width - width) / 2.0;
+                cam_info_crop.K.elems[5] = cam_info_crop.K.elems[5] - (img_msg->height - height) / 2.0;
+                cam_info_crop.P.elems[2] = cam_info_crop.K.elems[2];
+                cam_info_crop.P.elems[6] = cam_info_crop.K.elems[5];
+            }
+            yaml_node = YAML::Node(cam_info_crop);
             save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node);
             isCamInfoSaved_ = true;
         }
@@ -647,6 +656,7 @@ int main(int argc, char **argv)
 
     hri_arm::ArmController arm_controller(node);
 
+    // Note: The realsense2 streams are already rectified internally by the firmware
     message_filters::Subscriber<sensor_msgs::Image> image_sub(node, "/realsense2/color/image_raw", 1);
     message_filters::Subscriber<sensor_msgs::Image> depth_sub(node, "/realsense2/aligned_depth_to_color/image_raw", 1);
     message_filters::Subscriber<sensor_msgs::CameraInfo> info_sub(node, "/realsense2/color/camera_info", 1);
