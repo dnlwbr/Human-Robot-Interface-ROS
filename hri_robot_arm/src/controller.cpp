@@ -486,22 +486,22 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 {
     if (isRecording_) {
         // Convert bounding box
-        bbox_in_realsense_frame_ = bbox_in_root_frame_;
-        geometry_msgs::TransformStamped tf_root_to_rs2 = convert_bb_from_to(bbox_in_realsense_frame_,
+        vision_msgs::BoundingBox3D bbox_in_realsense_frame = bbox_in_root_frame_;
+        geometry_msgs::TransformStamped tf_root_to_rs2 = convert_bb_from_to(bbox_in_realsense_frame,
                                                                             "root",
                                                                             "realsense2_color_optical_frame");
 
         // Calculate 3D corners
-        Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame_.center.position.x,
-                                                   bbox_in_realsense_frame_.center.position.y,
-                                                   bbox_in_realsense_frame_.center.position.z);
-        Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame_.center.orientation.w,
-                                                            bbox_in_realsense_frame_.center.orientation.x,
-                                                            bbox_in_realsense_frame_.center.orientation.y,
-                                                            bbox_in_realsense_frame_.center.orientation.z);
-        Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame_.size.x,
-                                               bbox_in_realsense_frame_.size.y,
-                                               bbox_in_realsense_frame_.size.z);
+        Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame.center.position.x,
+                                                   bbox_in_realsense_frame.center.position.y,
+                                                   bbox_in_realsense_frame.center.position.z);
+        Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame.center.orientation.w,
+                                                            bbox_in_realsense_frame.center.orientation.x,
+                                                            bbox_in_realsense_frame.center.orientation.y,
+                                                            bbox_in_realsense_frame.center.orientation.z);
+        Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame.size.x,
+                                               bbox_in_realsense_frame.size.y,
+                                               bbox_in_realsense_frame.size.z);
 
         std::vector<cv::Point3d> corners = std::vector<cv::Point3d>();
         Eigen::Vector3d Point3D;

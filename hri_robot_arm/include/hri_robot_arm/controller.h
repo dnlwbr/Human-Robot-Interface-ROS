@@ -117,9 +117,8 @@ namespace hri_arm
         // Output file stream to write to disk
         std::ofstream fstream_out_;
 
-        // Bounding boxes
+        // Bounding box
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
-        vision_msgs::BoundingBox3D bbox_in_realsense_frame_;
 
         // Recordings
         std::string data_path_;
