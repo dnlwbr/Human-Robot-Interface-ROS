@@ -584,15 +584,15 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 //        depth_image_cropped.image = f32Mat;
         save_to_disk(current_path_ + "/" + filename.str() + "_depth.txt", depth_image_cropped.image);
 
-        // Calc tf from box center to camera
-        tf2::Transform tf2_root_to_rs2, tf2_root_to_box, tf2_box_to_rs2;
+        // Calculate transformation
+        tf2::Transform tf2_root_to_rs2, tf2_box_to_root, tf2_box_to_rs2;
         tf2::fromMsg(tf_root_to_rs2.transform, tf2_root_to_rs2);
-        tf2::fromMsg(bbox_in_root_frame_.center, tf2_root_to_box);
-        tf2_box_to_rs2.mult(tf2_root_to_rs2, tf2_root_to_box.inverse());
-        geometry_msgs::Transform tf_box_to_rs2 = tf2::toMsg(tf2_box_to_rs2);
+        tf2::fromMsg(bbox_in_root_frame_.center, tf2_box_to_root);  // box_to_root maps (0,0,0)_box to (x,y,z)_root
+        tf2_box_to_rs2.mult(tf2_root_to_rs2, tf2_box_to_root);
+        geometry_msgs::Transform tf_rs2_to_box = tf2::toMsg(tf2_box_to_rs2.inverse());
 
-        // Save transformation to disk
-        YAML::Node yaml_node = YAML::Node(tf_box_to_rs2);
+        // Save camera-to-box-transformation to disk
+        YAML::Node yaml_node = YAML::Node(tf_rs2_to_box);
         save_to_disk(current_path_ + "/" + filename.str() + "_tf.yaml", yaml_node);
 
         // Save camera info to disk (first time only)
