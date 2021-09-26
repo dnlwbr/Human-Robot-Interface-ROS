@@ -1,5 +1,8 @@
 # hri_robot_arm
 
+The robot arm moves around the object, captures it in RGB-D format and additionally stores the corresponding camera-to-box transformation.
+The color images are stored as JPG and the depth images are stored as 16-bit PNG, where the pixel values represent the respective depth in millimeters.
+
 ## Manual start without HoloLens2
 If necessary, adjust the box coordinates in [CommandlineActionCall.bagy](misc/CommandlineActionCall.bagy). Then call
 ```bash
@@ -31,4 +34,4 @@ Here the transformation already matches the pose of the camera, since
 ```
 x_world = R' * x_local + t'
 ```
-is `x_world = t'` for `x_local = (0,0,0)`.
+is equal to `x_world = t'` for `x_local = (0,0,0)`.

@@ -573,16 +573,11 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
         depth_image->image(crop_region).copyTo(depth_image_cropped.image);
 
-        // Save rgb image to disk
+        // Save rgb and depth image to disk
         std::stringstream filename;
         filename << std::setw(3) << std::setfill('0') << img_counter_;
-        cv::imwrite(current_path_ + "/" + filename.str() + "_rgb.png", rgb_image_cropped.image);
-
-        // Save depth to disk
-//        cv::Mat f32Mat;
-//        depth_image_cropped.image.convertTo(f32Mat, CV_32FC1, 0.001);  // mm -> m
-//        depth_image_cropped.image = f32Mat;
-        save_to_disk(current_path_ + "/" + filename.str() + "_depth.txt", depth_image_cropped.image);
+        cv::imwrite(current_path_ + "/" + filename.str() + "_rgb.jpg", rgb_image_cropped.image);
+        cv::imwrite(current_path_ + "/" + filename.str() + "_depth.png", depth_image_cropped.image);
 
         // Calculate transformation
         tf2::Transform tf2_root_to_rs2, tf2_box_to_root, tf2_box_to_rs2;
