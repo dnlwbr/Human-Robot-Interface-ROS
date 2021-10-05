@@ -32,7 +32,10 @@ ArmController::ArmController(ros::NodeHandle &nh):
         isRecording_(false),
         isCamInfoSaved_(false),
         crop_factor_(0.8),
-        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data")
+        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
+        rgb_folder_("rgb"),
+        depth_folder_("depth"),
+        tf_folder_("tf")
 {
     ros::NodeHandle pn("~");
 
@@ -576,8 +579,10 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         // Save rgb and depth image to disk
         std::stringstream filename;
         filename << std::setw(3) << std::setfill('0') << img_counter_;
-        cv::imwrite(current_path_ + "/" + filename.str() + "_rgb.jpg", rgb_image_cropped.image);
-        cv::imwrite(current_path_ + "/" + filename.str() + "_depth.png", depth_image_cropped.image);
+        std::string rgb_path_ = current_path_ + "/" + rgb_folder_ + "/" + filename.str() + "_rgb.jpg";
+        std::string depth_path_ = current_path_ + "/" + depth_folder_ + "/" + filename.str() + "_depth.png";
+        cv::imwrite(rgb_path_, rgb_image_cropped.image);
+        cv::imwrite(depth_path_, depth_image_cropped.image);
 
         // Calculate transformation
         tf2::Transform tf2_root_to_rs2, tf2_box_to_root, tf2_box_to_rs2;
@@ -588,7 +593,8 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 
         // Save camera-to-box-transformation to disk
         YAML::Node yaml_node = YAML::Node(tf_rs2_to_box);
-        save_to_disk(current_path_ + "/" + filename.str() + "_tf.yaml", yaml_node);
+        std::string tf_path_ = current_path_ + "/" + tf_folder_ + "/" + filename.str() + "_tf.yaml";
+        save_to_disk(tf_path_, yaml_node);
 
         // Save camera info to disk (first time only)
         if (!isCamInfoSaved_) {
@@ -616,6 +622,9 @@ void ArmController::update_directory() {
     if (!boost::filesystem::exists(current_path_)) {
         current_path_.append("/" + class_ + "00");
         boost::filesystem::create_directories(current_path_);
+        boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
     }
     else
     {
@@ -627,6 +636,9 @@ void ArmController::update_directory() {
         }
         current_path_ = path;
         boost::filesystem::create_directories(current_path_);
+        boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
     }
     ROS_INFO_STREAM("Output path: " + current_path_);
 }

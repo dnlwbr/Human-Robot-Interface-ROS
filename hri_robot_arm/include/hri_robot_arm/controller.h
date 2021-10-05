@@ -123,6 +123,9 @@ namespace hri_arm
         // Recordings
         std::string data_path_;
         std::string current_path_;
+        std::string rgb_folder_;
+        std::string depth_folder_;
+        std::string tf_folder_;
         std::string class_;
         bool isRecording_;
         bool isCamInfoSaved_;
