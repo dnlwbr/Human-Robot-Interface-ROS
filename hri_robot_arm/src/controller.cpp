@@ -313,7 +313,10 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 
     // Convert bounding box to root frame
     bbox_in_root_frame_ = goal->bbox;
-    convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
+    geometry_msgs::TransformStamped goal_to_root_frame = convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
+
+    // Convert gaze point to root frame
+    tf2::doTransform(goal->gaze_point, gaze_point_.position, goal_to_root_frame);
 
     ROS_INFO_STREAM("Build workspace");
     clear_workscene();
@@ -362,6 +365,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ROS_INFO("Calculate waypoints");
     double radius = calc_radius();
     std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(bbox_in_root_frame_.center, radius);
+//    std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(gaze_point_, radius);
 
     ROS_INFO_STREAM("Go to start position");
     group_->setPoseTarget(waypoints.front());

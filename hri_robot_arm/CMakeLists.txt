@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
   eigen_conversions
   tf2_ros
   vision_msgs
+  geometry_msgs
   cv_bridge
   image_geometry
 )
@@ -88,6 +89,7 @@ generate_messages(
   actionlib_msgs
   std_msgs
   vision_msgs
+  geometry_msgs
 )
 
 ################################################

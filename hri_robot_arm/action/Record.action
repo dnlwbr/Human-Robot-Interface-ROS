@@ -2,6 +2,7 @@
 Header header
 string class_name
 vision_msgs/BoundingBox3D bbox
+geometry_msgs/Point gaze_point
 ---
 #result
 bool success

@@ -127,6 +127,9 @@ namespace hri_arm
         // Bounding box
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
 
+        // Gaze point
+        geometry_msgs::Pose gaze_point_;
+
         // Recordings
         std::string data_path_;
         std::string current_path_;
