@@ -330,6 +330,35 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     add_obstacle();
     ros::WallDuration(0.5).sleep();
 
+    bool readjust = false;
+    if (readjust) {
+        ROS_INFO("Calculate inspect position");
+        double radius = calc_radius();
+        geometry_msgs::Pose inspect_pose = calc_inspect_pose(bbox_in_root_frame_.center, radius);
+
+        ROS_INFO("Go to inspect position");
+        group_->setPoseTarget(inspect_pose);
+        group_->move();
+
+        ROS_INFO("Readjust bounding box");
+        bool ret = readjust_box();
+        if (!ret) {
+            ROS_INFO("Readjusting failed - Return to home position");
+            group_->setNamedTarget("Home");
+            group_->move();
+            clear_workscene();
+            result_.success = false;
+            action_server_.setAborted(result_);
+            ROS_INFO_STREAM("Finished");
+            ROS_INFO_STREAM("Waiting for new goal...");
+            return;
+        }
+
+        ROS_INFO("Update obstacle");
+        add_obstacle();
+        ros::WallDuration(0.5).sleep();
+    }
+
     ROS_INFO("Calculate waypoints");
     double radius = calc_radius();
     std::vector<geometry_msgs::Pose> waypoints = calc_waypoints(bbox_in_root_frame_.center, radius);
@@ -415,6 +444,97 @@ geometry_msgs::TransformStamped ArmController::get_transform_from_to(const std::
         ROS_WARN("Failure: %s", ex.what());
     }
     return transform;
+}
+
+bool ArmController::readjust_box() {
+    // Get point cloud
+    std::string topic = "/realsense2/depth/color/points";
+    PointCloudT::ConstPtr pc = ros::topic::waitForMessage<PointCloudT>(topic, ros::Duration(20));
+    if (pc == nullptr) {
+        ROS_WARN("No point cloud messages received");
+        return false;
+    }
+    ROS_INFO("Point cloud received");
+
+    // Crop pointcloud to existing bounding box
+    PointCloudT::Ptr pc_cropped(new PointCloudT);
+    crop_cloud_to_bb(pc,pc_cropped);
+    if (pc_cropped->empty())
+        ROS_INFO("Adjusted box invalid");
+        return false;
+    geometry_msgs::TransformStamped transform = get_transform_from_to("realsense2_color_optical_frame", "root");
+    sensor_msgs::PointCloud2 pc_cropped_in_root_frame_msg;
+    pcl::toROSMsg(*pc_cropped, pc_cropped_in_root_frame_msg);
+    tf2::doTransform(pc_cropped_in_root_frame_msg, pc_cropped_in_root_frame_msg, transform);
+    pcl::fromROSMsg(pc_cropped_in_root_frame_msg, *pc_cropped);
+
+    // Get min and max
+    PointT minPoint3D, maxPoint3D;
+    pcl::getMinMax3D(*pc_cropped, minPoint3D, maxPoint3D);
+
+    // Calculate 3D bounding box
+    bbox_in_root_frame_.size.x = maxPoint3D.x - minPoint3D.x;
+    bbox_in_root_frame_.size.y = maxPoint3D.y - minPoint3D.y;
+    bbox_in_root_frame_.size.z = maxPoint3D.z - minPoint3D.z;
+    bbox_in_root_frame_.center.position.x = (minPoint3D.x + maxPoint3D.x) / 2;
+    bbox_in_root_frame_.center.position.y = (minPoint3D.y + maxPoint3D.y) / 2;
+    bbox_in_root_frame_.center.position.z = (minPoint3D.z + maxPoint3D.z) / 2;
+    bbox_in_root_frame_.center.orientation.x = 0;
+    bbox_in_root_frame_.center.orientation.y = 0;
+    bbox_in_root_frame_.center.orientation.z = 0;
+    bbox_in_root_frame_.center.orientation.w = 1;
+
+    return true;
+}
+
+void ArmController::crop_cloud_to_bb(const PointCloudT::ConstPtr& pc_in, PointCloudT::Ptr& pc_out) {
+    // Convert bounding box
+    vision_msgs::BoundingBox3D bbox_in_realsense_frame = bbox_in_root_frame_;
+    convert_bb_from_to(bbox_in_realsense_frame, "root", "realsense2_color_optical_frame");
+
+    // Calculate min & max
+    Eigen::Vector3f position = Eigen::Vector3f((float)bbox_in_realsense_frame.center.position.x,
+                                               (float)bbox_in_realsense_frame.center.position.y,
+                                               (float)bbox_in_realsense_frame.center.position.z);
+    Eigen::Quaternionf orientation = Eigen::Quaternionf((float)bbox_in_realsense_frame.center.orientation.w,
+                                                        (float)bbox_in_realsense_frame.center.orientation.x,
+                                                        (float)bbox_in_realsense_frame.center.orientation.y,
+                                                        (float)bbox_in_realsense_frame.center.orientation.z);
+    Eigen::Vector3f size = Eigen::Vector3f((float)bbox_in_realsense_frame.size.x,
+                                           (float)bbox_in_realsense_frame.size.y,
+                                           (float)bbox_in_realsense_frame.size.z);
+
+    Eigen::Vector3f minPoint = -size / 2;
+    Eigen::Vector3f maxPoint = size / 2;
+
+    // Crop box
+    pcl::CropBox<PointT> boxFilter;
+    boxFilter.setMin(Eigen::Vector4f(minPoint.x(), minPoint.y(), minPoint.z(), 1.0));
+    boxFilter.setMax(Eigen::Vector4f(maxPoint.x(), maxPoint.y(), maxPoint.z(), 1.0));
+    boxFilter.setTranslation(position);
+    auto euler = orientation.toRotationMatrix().eulerAngles(0,1,2);
+    boxFilter.setRotation(euler);
+
+    boxFilter.setInputCloud(pc_in);
+    boxFilter.filter(*pc_out);
+}
+
+geometry_msgs::Pose ArmController::calc_inspect_pose(const geometry_msgs::Pose& center, double radius)
+{
+    geometry_msgs::PoseStamped inspect_pose;
+    double angle_resolution_deg = 10;
+    double diff_angle_rad = angle_resolution_deg * 3.14/180;
+    double angle_rad = 0;
+    bool reachable = false;
+    while (!reachable) {
+        angle_rad -= diff_angle_rad; // clockwise rotation ("+" for counterclockwise)
+        inspect_pose = generate_gripper_align_pose(center, radius, angle_rad, 3*M_PI/4, M_PI/2);
+        // Check whether the pose is reachable
+        group_->setPoseTarget(inspect_pose);
+        reachable = (group_->plan(my_plan_) == moveit_msgs::MoveItErrorCodes::SUCCESS);
+        group_->clearPoseTargets();
+    }
+    return inspect_pose.pose;
 }
 
 std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_msgs::Pose& center, double radius)
@@ -564,12 +684,20 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             ROS_ERROR("cv_bridge exception: %s", e.what());
         }
 
+        double margin_factor = 1.3;
+        cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
+                                         (int)(maxPoint2D.y + minPoint2D.y) / 2);
+        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor);
+        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor);
+        int x = (int)(center.x - width/2);
+        int y = (int)(center.y - height/2);
+/*
         cv::Point2d center = cv::Point2d(img_msg->width/2.0,img_msg->height/2.0);
         auto width = (int)(img_msg->width * crop_factor_);
         auto height = (int)(img_msg->height * crop_factor_);
         auto x = (int)(center.x - (img_msg->width * crop_factor_)/2.0);
         auto y = (int)(center.y - (img_msg->height * crop_factor_)/2.0);
-
+*/
         cv::Rect crop_region(x, y, width, height);
         cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
         cv_bridge::CvImage depth_image_cropped = cv_bridge::CvImage(depth_image->header, depth_image->encoding);

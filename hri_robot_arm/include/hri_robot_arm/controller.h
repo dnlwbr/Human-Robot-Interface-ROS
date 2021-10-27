@@ -13,6 +13,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 
 // MoveIt!
 #include <moveit/robot_model_loader/robot_model_loader.h>
@@ -40,6 +41,7 @@
 #include <message_filters/time_synchronizer.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/PointCloud2.h>
 
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -49,6 +51,11 @@
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 #include "hri_robot_arm/yaml_conversions.h"
+#include <pcl/common/common.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_types.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/filters/crop_box.h>
 
 
 namespace hri_arm
@@ -139,6 +146,12 @@ namespace hri_arm
         void build_workscene();
         void clear_obstacle();
         void add_obstacle();
+
+        typedef pcl::PointXYZRGB PointT;
+        typedef pcl::PointCloud<PointT> PointCloudT;
+        bool readjust_box();
+        void crop_cloud_to_bb(const PointCloudT::ConstPtr& pc_in, PointCloudT::Ptr& pc_out);
+        geometry_msgs::Pose calc_inspect_pose(const geometry_msgs::Pose& center, double radius);
 
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
