@@ -48,6 +48,7 @@
 #include <image_geometry/pinhole_camera_model.h>
 
 #include <boost/filesystem.hpp>
+#include <cmath>
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 #include "hri_robot_arm/yaml_conversions.h"
@@ -162,7 +163,7 @@ namespace hri_arm
         geometry_msgs::TransformStamped get_transform_from_to(const std::string& source_frame, const std::string& target_frame);
         geometry_msgs::TransformStamped convert_bb_from_to(vision_msgs::BoundingBox3D &box, const std::string& source_frame, const std::string& target_frame);
         std::vector<geometry_msgs::Pose> calc_waypoints(const geometry_msgs::Pose& center, double radius);
-        double calc_radius();
+        double calc_radius() const;
 
         inline void start_recording() { img_counter_ = 0; isRecording_ = true; isCamInfoSaved_ = false;}
         inline void stop_recording() { isRecording_ = false;}

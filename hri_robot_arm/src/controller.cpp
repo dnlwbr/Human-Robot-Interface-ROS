@@ -599,12 +599,13 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
     return waypoints;
 }
 
-double ArmController::calc_radius() {
+double ArmController::calc_radius() const {
     double radius = 0.2; // Minimum distance to the object (realsense2 to end effector)
-    radius = (bbox_in_root_frame_.size.x) > radius ? bbox_in_root_frame_.size.x : radius;
-    radius = (bbox_in_root_frame_.size.y) > radius ? bbox_in_root_frame_.size.y : radius;
-    radius = (bbox_in_root_frame_.size.z) > radius ? bbox_in_root_frame_.size.z : radius;
-    return 3.0 * radius;
+    double diag = std::sqrt(std::pow(bbox_in_root_frame_.size.x, 2)
+                            + std::pow(bbox_in_root_frame_.size.y, 2)
+                            + std::pow(bbox_in_root_frame_.size.z, 2));
+    radius = diag > radius ? diag : radius;
+    return 2.0 * radius;
 }
 
 void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
