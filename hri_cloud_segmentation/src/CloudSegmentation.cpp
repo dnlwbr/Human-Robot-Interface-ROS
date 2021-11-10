@@ -276,7 +276,7 @@ void CloudSegmentation::clustering(bool keepOrganized) {
 
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(0.005);
-    ec.setMinClusterSize(1000);
+    ec.setMinClusterSize(500);  // Caution: If the value is too small, small objects cannot be detected.
     ec.setMaxClusterSize(99999000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
@@ -355,6 +355,13 @@ void CloudSegmentation::calc_bounding_box() {
     center.orientation.z = 0;
     center.orientation.w = 1;
 
+    /*
+    // For evaluation
+    if (!isinf(object.bbox.size.x))
+        object.bbox.center = center;
+        ROS_INFO_STREAM(object.bbox);
+    */
+
     tf2::doTransform(center, center, camera_base_leveled_to_cloud);
     object.bbox.center = center;
     pcl::toROSMsg(*cloud_segmented, object.source_cloud);
@@ -418,6 +425,7 @@ void CloudSegmentation::calc_bounding_box() {
         if (maxPoint2D.y > rgb_image->image.rows) { maxPoint2D.y = rgb_image->image.rows; }
     }
     bbox_2d.clear(); bbox_2d.push_back(minPoint2D); bbox_2d.push_back(maxPoint2D);
+//    ROS_INFO_STREAM(bbox_2d);
 }
 
 void CloudSegmentation::crop_cloud_to_bb() {
@@ -461,4 +469,25 @@ void CloudSegmentation::crop_image_to_bb() {
 
     // Fill header
     // CvImage is constructed with header from image message
+}
+
+
+void CloudSegmentation::full_leveled_cloud_as_segmented() {
+    geometry_msgs::TransformStamped cloud_to_camera_base_leveled;
+    geometry_msgs::TransformStamped camera_base_leveled_to_cloud;
+    try{
+        cloud_to_camera_base_leveled = tf_buffer.lookupTransform("azure_kinect_camera_base_leveled",
+                                                                 cloud_segmented->header.frame_id,
+                                                                 ros::Time(0),
+                                                                 ros::Duration(1.0));
+    }
+    catch (tf2::TransformException &ex) {
+        ROS_WARN("Failure: %s", ex.what());
+    }
+    sensor_msgs::PointCloud2 cloud_incoming_msg;
+    sensor_msgs::PointCloud2 cloud_incoming_leveled_msg;
+    PointCloudT::Ptr cloud_segmented_leveled(new PointCloudT);
+    pcl::toROSMsg(*cloud_incoming, cloud_incoming_msg);
+    tf2::doTransform(cloud_incoming_msg, cloud_incoming_leveled_msg, cloud_to_camera_base_leveled);
+    pcl::fromROSMsg(cloud_incoming_leveled_msg, *cloud_segmented);
 }

@@ -73,6 +73,7 @@ int main (int argc, char** argv)
         seg.clustering(false);
         seg.calc_bounding_box();
         seg.crop_image_to_bb();
+//        seg.full_leveled_cloud_as_segmented();
 
         if (seg.cloud_segmented->width != 0) {
             pub_segmented_cloud.publish(*seg.cloud_segmented);

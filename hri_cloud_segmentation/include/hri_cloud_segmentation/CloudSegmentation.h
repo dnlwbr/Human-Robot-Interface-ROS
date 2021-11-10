@@ -80,6 +80,8 @@ public:
     void crop_cloud_to_bb();
     void crop_image_to_bb();
 
+    void full_leveled_cloud_as_segmented();
+
 private:
     PointT gazeHitPoint;
     PointCloudT::ConstPtr cloud_incoming;
