@@ -32,6 +32,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         isRecording_(false),
         isCamInfoSaved_(false),
         crop_factor_(0.8),
+        margin_factor_(1.3),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
         rgb_folder_("rgb"),
         depth_folder_("depth"),
@@ -250,7 +251,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 
         // try to find a success plan.
         double plan_time;
-        while (!result && count < 5)
+        while (!result && (count < 5))
         {
             count++;
             plan_time = 20+count*10;
@@ -270,7 +271,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
             std::cout << "please input e to execute the plan, r to replan, others to skip: ";
             std::cin >> pause_;
             ros::WallDuration(0.5).sleep();
-            if (pause_ == "r" || pause_ == "R" )
+            if ((pause_ == "r") || (pause_ == "R" ))
             {
                 replan = true;
             }
@@ -289,7 +290,7 @@ void ArmController::evaluate_plan(moveit::planning_interface::MoveGroupInterface
 
     if(result)
     {
-        if (pause_ == "e" || pause_ == "E")
+        if ((pause_ == "e") || (pause_ == "E"))
         {
             group.execute(my_plan_);
         }
@@ -689,14 +690,15 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             ROS_ERROR("cv_bridge exception: %s", e.what());
         }
 
-        double margin_factor = 1.3;
+        // Crop with extra space (margin) around bounding box
         cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
                                          (int)(maxPoint2D.y + minPoint2D.y) / 2);
-        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor);
-        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor);
+        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor_);
+        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor_);
         int x = (int)(center.x - width/2);
         int y = (int)(center.y - height/2);
 /*
+        // Crop with fixed factor independent of bounding box (results in fixed images size)
         cv::Point2d center = cv::Point2d(img_msg->width/2.0,img_msg->height/2.0);
         auto width = (int)(img_msg->width * crop_factor_);
         auto height = (int)(img_msg->height * crop_factor_);
@@ -732,7 +734,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         // Save camera info to disk (first time only)
         if (!isCamInfoSaved_) {
             sensor_msgs::CameraInfo cam_info_crop = *cam_info;
-            if (crop_factor_ != 1) {
+            if ((crop_factor_ != 1) || (margin_factor_ != 1)) {
                 // Adjust the camera intrinsics to the cropped images
                 cam_info_crop.height = height;
                 cam_info_crop.width = width;
@@ -762,7 +764,7 @@ void ArmController::update_directory() {
     else
     {
         std::string path(current_path_);
-        for (int i = 0; boost::filesystem::exists(path) && i < 100; ++i) {
+        for (int i = 0; boost::filesystem::exists(path) && (i < 100); ++i) {
             std::stringstream ss;
             ss << current_path_ << "/" << class_ << std::setw(2) << std::setfill('0') << i;
             path = ss.str();

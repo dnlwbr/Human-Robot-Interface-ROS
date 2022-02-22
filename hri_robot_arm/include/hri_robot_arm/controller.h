@@ -142,6 +142,7 @@ namespace hri_arm
         bool isCamInfoSaved_;
         unsigned int img_counter_{};
         double crop_factor_;
+        double margin_factor_;
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
