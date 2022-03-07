@@ -29,10 +29,11 @@ ArmController::ArmController(ros::NodeHandle &nh):
         nh_(nh),
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
+        cloud_segmented_(new PointCloudT),
         isRecording_(false),
         isCamInfoSaved_(false),
         crop_factor_(0.8),
-        margin_factor_(1.3),
+        margin_factor_(1.7),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
         rgb_folder_("rgb"),
         depth_folder_("depth"),
@@ -312,6 +313,9 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     }
     class_ = goal->class_name;
 
+    // Set segmented cloud
+    pcl::fromROSMsg(goal->segmented_cloud, *cloud_segmented_);
+
     // Convert bounding box to root frame
     bbox_in_root_frame_ = goal->bbox;
     geometry_msgs::TransformStamped goal_to_root_frame = convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
@@ -464,9 +468,10 @@ bool ArmController::readjust_box() {
     // Crop pointcloud to existing bounding box
     PointCloudT::Ptr pc_cropped(new PointCloudT);
     crop_cloud_to_bb(pc,pc_cropped);
-    if (pc_cropped->empty())
+    if (pc_cropped->empty()) {
         ROS_INFO("Adjusted box invalid");
         return false;
+    }
     geometry_msgs::TransformStamped transform = get_transform_from_to("realsense2_color_optical_frame", "root");
     sensor_msgs::PointCloud2 pc_cropped_in_root_frame_msg;
     pcl::toROSMsg(*pc_cropped, pc_cropped_in_root_frame_msg);
@@ -614,49 +619,70 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
                                     const sensor_msgs::CameraInfoConstPtr& cam_info)
 {
     if (isRecording_) {
-        // Convert bounding box
+        // Convert bounding box (also needed for tf files)
         vision_msgs::BoundingBox3D bbox_in_realsense_frame = bbox_in_root_frame_;
         geometry_msgs::TransformStamped tf_root_to_rs2 = convert_bb_from_to(bbox_in_realsense_frame,
                                                                             "root",
                                                                             "realsense2_color_optical_frame");
 
-        // Calculate 3D corners
-        Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame.center.position.x,
-                                                   bbox_in_realsense_frame.center.position.y,
-                                                   bbox_in_realsense_frame.center.position.z);
-        Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame.center.orientation.w,
-                                                            bbox_in_realsense_frame.center.orientation.x,
-                                                            bbox_in_realsense_frame.center.orientation.y,
-                                                            bbox_in_realsense_frame.center.orientation.z);
-        Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame.size.x,
-                                               bbox_in_realsense_frame.size.y,
-                                               bbox_in_realsense_frame.size.z);
+        // Points3D: corners of box resp. points of segmented cloud
+        std::vector<cv::Point3d> Points3D = std::vector<cv::Point3d>();
 
-        std::vector<cv::Point3d> corners = std::vector<cv::Point3d>();
-        Eigen::Vector3d Point3D;
-        Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), -size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), -size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), -size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), -size.z()) / 2);
-        corners.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        bool useBox = false;
+        if (useBox) {
+            // Calculate 3D corners
+            Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame.center.position.x,
+                                                       bbox_in_realsense_frame.center.position.y,
+                                                       bbox_in_realsense_frame.center.position.z);
+            Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame.center.orientation.w,
+                                                                bbox_in_realsense_frame.center.orientation.x,
+                                                                bbox_in_realsense_frame.center.orientation.y,
+                                                                bbox_in_realsense_frame.center.orientation.z);
+            Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame.size.x,
+                                                   bbox_in_realsense_frame.size.y,
+                                                   bbox_in_realsense_frame.size.z);
 
-        // Project 3D corners on 2D plane
+            Eigen::Vector3d Point3D;
+            Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), -size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), -size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), -size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), -size.z()) / 2);
+            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+        }
+        else
+        {
+            // Get transform
+            geometry_msgs::TransformStamped transform = get_transform_from_to(
+                    cloud_segmented_->header.frame_id,
+                    "realsense2_color_optical_frame");
+
+            // Transform cloud from Azure Kinect Frame to RealSense Frame
+            PointCloudT cloud_seg_transformed;
+            pcl_ros::transformPointCloud(*cloud_segmented_, cloud_seg_transformed, transform.transform);
+
+            // Convert to vector
+            for (auto & point : cloud_seg_transformed.points) {
+                Points3D.emplace_back(point.x, point.y, point.z);
+            }
+        }
+
+        // Project 3D corners/cloud points on 2D plane
         image_geometry::PinholeCameraModel cam_model;
         cam_model.fromCameraInfo(cam_info);
         std::vector<cv::Point2d> projected_corners = std::vector<cv::Point2d>();
-        for (auto & corner : corners) {
-            cv::Point2d point2D = cam_model.project3dToPixel(corner);
+        for (auto & point : Points3D) {
+            cv::Point2d point2D = cam_model.project3dToPixel(point);
             projected_corners.push_back(point2D);
         }
 
@@ -690,7 +716,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             ROS_ERROR("cv_bridge exception: %s", e.what());
         }
 
-        // Crop with extra space (margin) around bounding box
+        // Crop with extra space (margin)
         cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
                                          (int)(maxPoint2D.y + minPoint2D.y) / 2);
         int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor_);
@@ -706,6 +732,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         auto y = (int)(center.y - (img_msg->height * crop_factor_)/2.0);
 */
         cv::Rect crop_region(x, y, width, height);
+        crop_region = crop_region & cv::Rect(0, 0, img_msg->width, img_msg->height);
         cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
         cv_bridge::CvImage depth_image_cropped = cv_bridge::CvImage(depth_image->header, depth_image->encoding);
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);

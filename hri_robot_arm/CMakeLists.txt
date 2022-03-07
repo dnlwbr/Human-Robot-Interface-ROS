@@ -24,6 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_ros
   vision_msgs
   geometry_msgs
+  sensor_msgs
   cv_bridge
   image_geometry
 )
@@ -90,6 +91,7 @@ generate_messages(
   std_msgs
   vision_msgs
   geometry_msgs
+  sensor_msgs
 )
 
 ################################################

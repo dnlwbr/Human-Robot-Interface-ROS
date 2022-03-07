@@ -56,6 +56,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
 #include <pcl_ros/point_cloud.h>
+#include <pcl_ros/transforms.h>
 #include <pcl/filters/crop_box.h>
 
 
@@ -66,12 +67,13 @@ namespace hri_arm
     class ArmController
     {
     public:
+        typedef pcl::PointXYZRGB PointT;
+        typedef pcl::PointCloud<PointT> PointCloudT;
         explicit ArmController(ros::NodeHandle &nh);
         ~ArmController();
         void callback_camera(const sensor_msgs::ImageConstPtr& rgb_image,
                              const sensor_msgs::ImageConstPtr& depth_image,
                              const sensor_msgs::CameraInfoConstPtr& cam_info);
-
 
     private:
         ros::NodeHandle nh_;
@@ -125,6 +127,9 @@ namespace hri_arm
         // Output file stream to write to disk
         std::ofstream fstream_out_;
 
+        // Segmented cloud
+        PointCloudT::Ptr cloud_segmented_;
+
         // Bounding box
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
 
@@ -152,8 +157,6 @@ namespace hri_arm
         void clear_obstacle();
         void add_obstacle();
 
-        typedef pcl::PointXYZRGB PointT;
-        typedef pcl::PointCloud<PointT> PointCloudT;
         bool readjust_box();
         void crop_cloud_to_bb(const PointCloudT::ConstPtr& pc_in, PointCloudT::Ptr& pc_out);
         geometry_msgs::Pose calc_inspect_pose(const geometry_msgs::Pose& center, double radius);
