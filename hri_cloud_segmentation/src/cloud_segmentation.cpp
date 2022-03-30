@@ -27,7 +27,7 @@ int main (int argc, char** argv)
     ROS_INFO("Subscribing to %s", topic.c_str());
 
     topic = "/azure_kinect/rgb/image_rect_color";  // PinholeCameraModel::project3dToPixel outputs rectified pixel coordinates
-    image_transport::CameraSubscriber sub_rgbImage = it.subscribeCamera(topic, 1, &CloudSegmentation::callback_rgbImage, &seg);
+    image_transport::CameraSubscriber sub_rgbImage = it.subscribeCamera(topic, 5, &CloudSegmentation::callback_rgbImage, &seg);
     ROS_INFO("Subscribing to %s", topic.c_str());
 
 
@@ -68,7 +68,7 @@ int main (int argc, char** argv)
     {
         seg.pass_through_filter(false);
         seg.voxel_filter(false);
-        seg.planar_segmentation(30, false); // If epsilon angle equals 0 the axis is ignored.
+        seg.planar_segmentation(20, false); // If epsilon angle equals 0 the axis is ignored.
         //seg.min_cut_segmentation(0.1, false);
         seg.clustering(false);
         seg.calc_bounding_box();

@@ -119,7 +119,7 @@ void CloudSegmentation::voxel_filter(bool keepOrganized) {
     // Filtering input scan to increase speed.
     PointCloudT::Ptr cloud_voxel(new PointCloudT);
     pcl::VoxelGrid<PointT> voxel_grid;
-    voxel_grid.setLeafSize(0.003f, 0.003f, 0.003f);
+    voxel_grid.setLeafSize(0.002f, 0.002f, 0.002f);
     voxel_grid.setInputCloud(cloud_segmented);
 
     if (cloud_segmented->isOrganized() && keepOrganized) {
@@ -188,8 +188,8 @@ void CloudSegmentation::planar_segmentation(double angle, bool keepOrganized) {
     pcl::SACSegmentation<PointT> seg;
     seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setMaxIterations(500);
-    seg.setDistanceThreshold(0.005);
+    seg.setMaxIterations(1000);
+    seg.setDistanceThreshold(0.003);
     seg.setInputCloud(cloud_filtered);
     seg.setOptimizeCoefficients (true); // Optional
 
@@ -262,22 +262,14 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
 
 
 void CloudSegmentation::clustering(bool keepOrganized) {
-    // Search for the closest point in point cloud
-    pcl::KdTreeFLANN<PointT> kdtree_closest_point;
-    kdtree_closest_point.setInputCloud(cloud_segmented);
-    int K = 1;
-    std::vector<int> pointIdxNKNSearch(K);
-    std::vector<float> pointNKNSquaredDistance;
-    kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
-
     // Cluster the point cloud
     pcl::search::KdTree<PointT>::Ptr kdtree_cluster(new pcl::search::KdTree<PointT>);
     kdtree_cluster->setInputCloud(cloud_segmented);
 
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.005);
-    ec.setMinClusterSize(500);  // Caution: If the value is too small, small objects cannot be detected.
-    ec.setMaxClusterSize(99999000);
+    ec.setClusterTolerance(0.01);
+    ec.setMinClusterSize(300);  // Caution: If the value is too small, small objects cannot be detected.
+    ec.setMaxClusterSize(10000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
     // If cloud is not dense ignore NaNs
@@ -291,6 +283,22 @@ void CloudSegmentation::clustering(bool keepOrganized) {
     std::vector<pcl::PointIndices> clusters;
     ec.extract(clusters);
 
+    // Vector[Vector[int]] -> Vector[int]
+    pcl::IndicesPtr clusters_indices(new std::vector<int>);
+    for (const auto & cluster : clusters)
+    {
+        clusters_indices->insert(std::end(*clusters_indices), std::begin(cluster.indices), std::end(cluster.indices));
+    }
+
+    // Search for the closest point among the cluster indices in the point cloud
+    pcl::KdTreeFLANN<PointT> kdtree_closest_point;
+    kdtree_closest_point.setInputCloud(cloud_segmented, clusters_indices);
+    int K = 1;
+    std::vector<int> pointIdxNKNSearch(K);
+    std::vector<float> pointNKNSquaredDistance;
+    kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
+
+    // Find cluster with (approx.) gaze hit point
     pcl::PointIndices::Ptr clusterPtr(new pcl::PointIndices());  // Pointer to the cluster of the object
     // For each cluster found
     for (const auto & cluster : clusters)
@@ -302,6 +310,7 @@ void CloudSegmentation::clustering(bool keepOrganized) {
         }
     }
 
+    // Extract cluster
     pcl::ExtractIndices<PointT> extract;
     extract.setInputCloud(cloud_segmented);
     extract.setIndices(clusterPtr);
