@@ -287,7 +287,7 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
 
 
 void CloudSegmentation::clustering(bool keepOrganized) {
-    if (cloud_segmented->empty()) {
+    if (cloud_segmented->empty() || cloud_segmented->size() > 50000) {  // Avoid long and futile clustering
         return;
     }
 
@@ -296,8 +296,8 @@ void CloudSegmentation::clustering(bool keepOrganized) {
     kdtree_cluster->setInputCloud(cloud_segmented);
 
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.03);
-    ec.setMinClusterSize(300);  // Caution: If the value is too small, small objects cannot be detected.
+    ec.setClusterTolerance(0.005);
+    ec.setMinClusterSize(200);  // Caution: If the value is too big, small objects cannot be detected.
     ec.setMaxClusterSize(15000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
@@ -316,37 +316,28 @@ void CloudSegmentation::clustering(bool keepOrganized) {
         return;
     }
 
-    // Vector[Vector[int]] -> Vector[int]
-    pcl::IndicesPtr clusters_indices(new std::vector<int>);
-    for (const auto & cluster : clusters)
-    {
-        clusters_indices->insert(std::end(*clusters_indices), std::begin(cluster.indices), std::end(cluster.indices));
-    }
-
-    // Search for the closest point among the cluster indices in the point cloud
+    // Search for the closest point in each cluster and accumulate all respective indices in vector (if below threshold)
     pcl::KdTreeFLANN<PointT> kdtree_closest_point;
-    kdtree_closest_point.setInputCloud(cloud_segmented, clusters_indices);
     int K = 1;
     std::vector<int> pointIdxNKNSearch(K);
     std::vector<float> pointNKNSquaredDistance;
-    kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
-
-    // Find cluster with (approx.) gaze hit point
-    pcl::PointIndices::Ptr clusterPtr(new pcl::PointIndices());  // Pointer to the cluster of the object
+    pcl::IndicesPtr clustersIndicesPtr(new std::vector<int>);
     // For each cluster found
-    for (const auto & cluster : clusters)
-    {
-        // Check if point belongs to cluster (clusters[i] is i-th cluster)
-        if (find(cluster.indices.begin(), cluster.indices.end(), pointIdxNKNSearch[0]) != cluster.indices.end()) {
-            *clusterPtr = cluster;
-            break;
+    for (const auto & cluster : clusters) { // clusters=vector[vector[int]]
+        pcl::IndicesPtr cluster_indices = boost::make_shared<std::vector<int>>(cluster.indices);
+        kdtree_closest_point.setInputCloud(cloud_segmented, cluster_indices);
+        kdtree_closest_point.nearestKSearch(gazeHitPoint, K, pointIdxNKNSearch, pointNKNSquaredDistance);
+        if (pointNKNSquaredDistance[0] <= 0.02) {
+            clustersIndicesPtr->insert(std::end(*clustersIndicesPtr),
+                                       std::begin(cluster.indices),
+                                       std::end(cluster.indices));
         }
-    }
+    };
 
-    // Extract cluster
+    // Extract clusters
     pcl::ExtractIndices<PointT> extract;
     extract.setInputCloud(cloud_segmented);
-    extract.setIndices(clusterPtr);
+    extract.setIndices(clustersIndicesPtr);
     extract.setNegative(false);
     if (cloud_segmented->isOrganized() && keepOrganized) {
         extract.setKeepOrganized(true);
@@ -472,6 +463,12 @@ void CloudSegmentation::calc_bounding_box() {
     bbox_2d.clear(); bbox_2d.push_back(minPoint2D); bbox_2d.push_back(maxPoint2D);
 //    ROS_INFO_STREAM(bbox_2d);
 }
+
+
+bool CloudSegmentation::isBoxValid() const {
+    return (object.bbox.size.x > 0) && (object.bbox.size.y > 0) && (object.bbox.size.z > 0);
+}
+
 
 void CloudSegmentation::crop_cloud_to_bb() {
     if (cloud_segmented->empty()) {

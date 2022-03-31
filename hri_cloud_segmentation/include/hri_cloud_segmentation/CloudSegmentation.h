@@ -73,6 +73,7 @@ public:
     void planar_segmentation(double angle = 0, bool keepOrganized = false);
     void min_cut_segmentation(double radius, bool show_background = false);
     void clustering(bool keepOrganized = false);
+    bool isBoxValid() const;
 
     vision_msgs::Detection3D object;
     visualization_msgs::Marker marker;
