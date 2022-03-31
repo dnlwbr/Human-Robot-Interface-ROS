@@ -17,7 +17,7 @@ CloudSegmentation::CloudSegmentation()
 void CloudSegmentation::callback_cloud(PointCloudT::ConstPtr const & msg)
 {
     cloud_incoming = msg;
-    cloud_segmented = msg->makeShared();
+    //cloud_segmented = msg->makeShared();
     //cloud_segmented->header = msg->header;
 
     if (!isCloudInitialized)
@@ -88,6 +88,13 @@ void CloudSegmentation::initialize_transform(const std::string& source_frame) {
 }
 
 
+void CloudSegmentation::reset_segmented_cloud() {
+    // Sets segmented cloud to incoming cloud
+    // (Not possible in callback since iteration frequency is higher than incoming messages)
+    cloud_segmented = cloud_incoming->makeShared();
+}
+
+
 void CloudSegmentation::UpdateProperties(PointCloudT &cloud) {
     if (cloud.isOrganized()) {
         cloud.is_dense = false; // Cloud contains NaN (or Inf) values
@@ -101,17 +108,32 @@ void CloudSegmentation::UpdateProperties(PointCloudT &cloud) {
 }
 
 
-void CloudSegmentation::pass_through_filter(bool keepOrganized) {
+void CloudSegmentation::pass_through_filter(float sx, float sy, float sz, bool keepOrganized) {
+    // From view of camera: x=right, y=down, z=forward
     PointCloudT::Ptr cloud_filtered(new PointCloudT);
     pcl::PassThrough<PointT> pass;
-    pass.setInputCloud(cloud_incoming);  // Start with original cloud
-    pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.0, 3.0);
+    pass.setInputCloud(cloud_segmented);  // Start with original cloud
     if (cloud_segmented->isOrganized() && keepOrganized) {
         pass.setKeepOrganized(true);
     }
-    pass.filter(*cloud_segmented);
-    UpdateProperties(*cloud_segmented);
+    if (sx > 0) {
+        pass.setFilterFieldName("x");
+        pass.setFilterLimits(gazeHitPoint.x - sx,gazeHitPoint.x + sx);
+        pass.filter(*cloud_segmented);
+        UpdateProperties(*cloud_segmented);
+    }
+    if (sy > 0) {
+        pass.setFilterFieldName("y");
+        pass.setFilterLimits(gazeHitPoint.y - sy,gazeHitPoint.y + sy);
+        pass.filter(*cloud_segmented);
+        UpdateProperties(*cloud_segmented);
+    }
+    if (sz > 0) {
+        pass.setFilterFieldName("z");
+        pass.setFilterLimits(gazeHitPoint.z - sz,gazeHitPoint.z + sz);
+        pass.filter(*cloud_segmented);
+        UpdateProperties(*cloud_segmented);
+    }
 }
 
 
@@ -173,6 +195,9 @@ void CloudSegmentation::downsample() {
 
 
 void CloudSegmentation::planar_segmentation(double angle, bool keepOrganized) {
+    if (cloud_segmented->size() < 10) {
+        return;
+    }
     PointCloudT::Ptr  cloud_filtered(new PointCloudT);
     std::vector<int> indices_nonNan;
     // If cloud is not dense remove NaNs
@@ -189,7 +214,7 @@ void CloudSegmentation::planar_segmentation(double angle, bool keepOrganized) {
     seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(1000);
-    seg.setDistanceThreshold(0.003);
+    seg.setDistanceThreshold(0.005);
     seg.setInputCloud(cloud_filtered);
     seg.setOptimizeCoefficients (true); // Optional
 
@@ -262,14 +287,18 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
 
 
 void CloudSegmentation::clustering(bool keepOrganized) {
-    // Cluster the point cloud
+    if (cloud_segmented->empty()) {
+        return;
+    }
+
+    // Extract clusters (indices)
     pcl::search::KdTree<PointT>::Ptr kdtree_cluster(new pcl::search::KdTree<PointT>);
     kdtree_cluster->setInputCloud(cloud_segmented);
 
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.01);
+    ec.setClusterTolerance(0.03);
     ec.setMinClusterSize(300);  // Caution: If the value is too small, small objects cannot be detected.
-    ec.setMaxClusterSize(10000);
+    ec.setMaxClusterSize(15000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
     // If cloud is not dense ignore NaNs
@@ -282,6 +311,10 @@ void CloudSegmentation::clustering(bool keepOrganized) {
     }
     std::vector<pcl::PointIndices> clusters;
     ec.extract(clusters);
+
+    if (clusters.empty()) {
+        return;
+    }
 
     // Vector[Vector[int]] -> Vector[int]
     pcl::IndicesPtr clusters_indices(new std::vector<int>);
@@ -324,6 +357,9 @@ void CloudSegmentation::clustering(bool keepOrganized) {
 
 
 void CloudSegmentation::calc_bounding_box() {
+    if (cloud_segmented->empty()) {
+        return;
+    }
     geometry_msgs::TransformStamped cloud_to_camera_base_leveled;
     geometry_msgs::TransformStamped camera_base_leveled_to_cloud;
     try{
@@ -438,6 +474,9 @@ void CloudSegmentation::calc_bounding_box() {
 }
 
 void CloudSegmentation::crop_cloud_to_bb() {
+    if (cloud_segmented->empty()) {
+        return;
+    }
     pcl::CropBox<PointT> boxFilter;
     boxFilter.setMin(Eigen::Vector4f(object.bbox.center.position.x - object.bbox.size.x/2,
                                      object.bbox.center.position.y - object.bbox.size.y/2,
@@ -465,6 +504,9 @@ void CloudSegmentation::crop_cloud_to_bb() {
 
 
 void CloudSegmentation::crop_image_to_bb() {
+    if (cloud_segmented->empty()) {
+        return;
+    }
     int x = (int)bbox_2d[0].x;
     int y = (int)bbox_2d[0].y;
     int width = (int)(bbox_2d[1].x - bbox_2d[0].x);
@@ -482,6 +524,9 @@ void CloudSegmentation::crop_image_to_bb() {
 
 
 void CloudSegmentation::full_leveled_cloud_as_segmented() {
+    if (cloud_segmented->empty()) {
+        return;
+    }
     geometry_msgs::TransformStamped cloud_to_camera_base_leveled;
     geometry_msgs::TransformStamped camera_base_leveled_to_cloud;
     try{

@@ -66,16 +66,17 @@ int main (int argc, char** argv)
 
     while (ros::ok())
     {
-        seg.pass_through_filter(false);
-        seg.voxel_filter(false);
-        seg.planar_segmentation(20, false); // If epsilon angle equals 0 the axis is ignored.
+        seg.reset_segmented_cloud();
+        seg.pass_through_filter(0.25, 0.25, 0.25, false);
+//        seg.voxel_filter(false);
+        seg.planar_segmentation(80, false); // If epsilon angle equals 0 the axis is ignored.
         //seg.min_cut_segmentation(0.1, false);
         seg.clustering(false);
         seg.calc_bounding_box();
         seg.crop_image_to_bb();
 //        seg.full_leveled_cloud_as_segmented();
 
-        if (seg.cloud_segmented->width != 0) {
+        if (!seg.cloud_segmented->empty()) {
             pub_segmented_cloud.publish(*seg.cloud_segmented);
             pub_box.publish(seg.object);
             pub_viz_marker.publish(seg.marker);

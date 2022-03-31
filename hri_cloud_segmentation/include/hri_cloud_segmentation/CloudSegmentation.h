@@ -64,10 +64,10 @@ public:
     void initialize_transform(const std::string& source_frame);
     inline bool isInitialized() const { return isCloudInitialized && isGazeInitialized && isTransformInitialized
                                         && isRGBImageInitialized;}
-
+    void reset_segmented_cloud();
     void UpdateProperties(PointCloudT &cloud);
 
-    void pass_through_filter(bool keepOrganized = false);
+    void pass_through_filter(float sx, float sy, float sz, bool keepOrganized = false);
     void voxel_filter(bool keepOrganized = false);
     void downsample();
     void planar_segmentation(double angle = 0, bool keepOrganized = false);
