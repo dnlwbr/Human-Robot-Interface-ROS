@@ -570,12 +570,10 @@ std::vector<geometry_msgs::Pose> ArmController::calc_waypoints(const geometry_ms
         angle_rad -= diff_angle_rad; // clockwise rotation ("+" for counterclockwise)
         target_pose = generate_gripper_align_pose(center, radius, angle_rad, 3*M_PI/4, M_PI/2);
 
-        // Adjust target_pose
-        //target_pose.pose.position.z -= 0.05; // TODO?
-
         // Check whether the pose is reachable
         group_->setPoseTarget(target_pose);
-        bool result = (group_->plan(my_plan_) == moveit_msgs::MoveItErrorCodes::SUCCESS);
+        moveit::core::MoveItErrorCode ret_code = group_->plan(my_plan_);
+        bool result = (ret_code == moveit::core::MoveItErrorCode::SUCCESS);
         group_->clearPoseTargets();
         if (result) {
             if (!gap) {
@@ -740,10 +738,13 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 
         // Save rgb and depth image to disk
         std::stringstream filename;
-        filename << std::setw(3) << std::setfill('0') << img_counter_;
+        cv::Mat bgr_image_cropped;
+        filename << std::setw(4) << std::setfill('0') << img_counter_;
         std::string rgb_path_ = current_path_ + "/" + rgb_folder_ + "/" + filename.str() + "_rgb.jpg";
         std::string depth_path_ = current_path_ + "/" + depth_folder_ + "/" + filename.str() + "_depth.png";
-        cv::imwrite(rgb_path_, rgb_image_cropped.image);
+        cv::cvtColor(rgb_image_cropped.image, bgr_image_cropped, cv::COLOR_RGB2BGR);
+        // TODO Convert depth from 16UC1 to?
+        cv::imwrite(rgb_path_, bgr_image_cropped);
         cv::imwrite(depth_path_, depth_image_cropped.image);
 
         // Calculate transformation
