@@ -68,7 +68,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
     group_->setPoseReferenceFrame("root");
 //    group_->setEndEffectorLink(robot_type_ + "_end_effector");
     group_->setEndEffectorLink("realsense2_end_effector");
-    group_->setMaxVelocityScalingFactor(0.5);
+    group_->setMaxVelocityScalingFactor(0.7);
 
     finger_client_ = new actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction>
             ("/" + robot_type_ + "_driver/fingers_action/finger_positions", false);
@@ -385,11 +385,13 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     gripper_group_->setNamedTarget("Open"); // Move the fingers out of the field of view of the camera
     gripper_group_->move();
     ros::WallDuration(0.5).sleep();
+    group_->setMaxVelocityScalingFactor(0.5);
     update_directory();
     start_recording();
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
     ROS_INFO_STREAM("Stop recording");
+    group_->setMaxVelocityScalingFactor(0.7);
     gripper_group_->setNamedTarget("Close"); // Save space to not bump into anywhere
     gripper_group_->move();
 
@@ -695,10 +697,6 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             maxPoint2D.x = (point.x > maxPoint2D.x) ? point.x : maxPoint2D.x;
             maxPoint2D.y = (point.y > maxPoint2D.y) ? point.y : maxPoint2D.y;
         }
-        minPoint2D.x = (minPoint2D.x < 0) ? 0 : minPoint2D.x;
-        minPoint2D.y = (minPoint2D.y < 0) ? 0 : minPoint2D.y;
-        maxPoint2D.x = (maxPoint2D.x >= img_msg->width) ? img_msg->width - 1 : maxPoint2D.x;
-        maxPoint2D.y = (maxPoint2D.y >= img_msg->height) ? img_msg->height - 1 : maxPoint2D.y;
 
         // Crop image to 2D bounding box
         boost::shared_ptr<const cv_bridge::CvImage> rgb_image;
@@ -731,6 +729,10 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 */
         cv::Rect crop_region(x, y, width, height);
         crop_region = crop_region & cv::Rect(0, 0, img_msg->width, img_msg->height);
+        if (crop_region.area() == 0) {
+            ROS_INFO_STREAM("Cropping area is outside image dimensions. Image will not be saved.");
+            return;
+        }
         cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
         cv_bridge::CvImage depth_image_cropped = cv_bridge::CvImage(depth_image->header, depth_image->encoding);
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
