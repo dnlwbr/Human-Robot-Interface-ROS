@@ -68,7 +68,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
     group_->setPoseReferenceFrame("root");
 //    group_->setEndEffectorLink(robot_type_ + "_end_effector");
     group_->setEndEffectorLink("realsense2_end_effector");
-    group_->setMaxVelocityScalingFactor(0.7);
+    group_->setMaxVelocityScalingFactor(0.8);
 
     finger_client_ = new actionlib::SimpleActionClient<kinova_msgs::SetFingersPositionAction>
             ("/" + robot_type_ + "_driver/fingers_action/finger_positions", false);
@@ -86,6 +86,8 @@ ArmController::ArmController(ros::NodeHandle &nh):
     {
         joint_names_[i] = robot_type_ + "_joint_" + boost::lexical_cast<std::string>(i+1);
     }
+
+    pub_received_cloud_ = nh_.advertise<PointCloudT>("/hri_robot_arm/received/points2", 1);
 
     action_server_.start();
 }
@@ -201,6 +203,44 @@ void ArmController::add_obstacle()
     ros::WallDuration(0.1).sleep();
 }
 
+void ArmController::set_joint_constraints() {
+    // Constraints because of camera
+    moveit_msgs::Constraints path_constraints;
+    moveit_msgs::OrientationConstraint ocm;
+    ocm.header.frame_id = "j2n6s300_link_base";
+    ocm.link_name = "j2n6s300_link_6";
+    ocm.orientation.x = 0;
+    ocm.orientation.y = -0.7071068;
+    ocm.orientation.z = 0;
+    ocm.orientation.w = 0.7071068;
+    ocm.absolute_x_axis_tolerance = 3.14159 / 2;
+    ocm.absolute_y_axis_tolerance = 3.14159 / 2;
+    ocm.absolute_z_axis_tolerance = 2 * 3.14159;
+    ocm.weight = 1.0;
+    path_constraints.orientation_constraints.push_back(ocm);
+    group_->setPathConstraints(path_constraints);
+
+//    moveit_msgs::JointConstraint jcm1;
+//    jcm1.joint_name = "j2n6s300_joint_1";
+//    jcm1.position = 0;//current_state_.position.at(0);
+//    ROS_INFO_STREAM(jcm1.position);
+//    jcm1.tolerance_below = 3.14159 / 2;
+//    jcm1.tolerance_above = 3.14159 / 2;
+//    jcm1.weight = 1.0;
+//    path_constraints.joint_constraints.push_back(jcm1);
+//
+//    moveit_msgs::JointConstraint jcm6;
+//    jcm6.joint_name = "j2n6s300_joint_6";
+//    jcm6.position = 0;//current_state_.position.at(5);
+//    ROS_INFO_STREAM(jcm6.position);
+//    jcm6.tolerance_below = 3.14159;
+//    jcm6.tolerance_above = 3.14159;
+//    jcm6.weight = 1.0;
+//    path_constraints.joint_constraints.push_back(jcm6);
+
+    group_->setPathConstraints(path_constraints);
+}
+
 /**
  * @brief ArmController::generate_gripper_align_pose
  * @param targetpose_msg pick/place pose (object location): where gripper close/open the fingers (grasp/release the object). Only position information is used.
@@ -303,6 +343,9 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
 {
     ROS_INFO_STREAM("Goal received for class \"" + goal->class_name + "\"");
 
+    ROS_INFO_STREAM("Publish received cloud");
+    pub_received_cloud_.publish(goal->segmented_cloud);
+
     // Set class name
     if (goal->class_name.empty())
     {
@@ -391,11 +434,12 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     group_->execute(trajectory); // Inspection/Evaluation does not work
     stop_recording();
     ROS_INFO_STREAM("Stop recording");
-    group_->setMaxVelocityScalingFactor(0.7);
+    group_->setMaxVelocityScalingFactor(0.8);
     gripper_group_->setNamedTarget("Close"); // Save space to not bump into anywhere
     gripper_group_->move();
 
     ROS_INFO_STREAM("Return to home position");
+//    set_joint_constraints();
     group_->setNamedTarget("Home");
     group_->move();
 

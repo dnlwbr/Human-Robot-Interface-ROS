@@ -99,6 +99,7 @@ namespace hri_arm
         ros::Subscriber sub_pose_;
         ros::Subscriber sub_joint_;
         actionlib::SimpleActionServer<hri_robot_arm::RecordAction> action_server_;
+        ros::Publisher pub_received_cloud_;
 
         // create messages that are used to published feedback/result
         hri_robot_arm::RecordFeedback feedback_;
@@ -156,6 +157,7 @@ namespace hri_arm
         void build_workscene();
         void clear_obstacle();
         void add_obstacle();
+        void set_joint_constraints();
 
         bool readjust_box();
         void crop_cloud_to_bb(const PointCloudT::ConstPtr& pc_in, PointCloudT::Ptr& pc_out);
