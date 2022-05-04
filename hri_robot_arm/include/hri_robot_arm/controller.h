@@ -141,7 +141,9 @@ namespace hri_arm
         std::string data_path_;
         std::string current_path_;
         std::string rgb_folder_;
+        std::string rgb_full_folder_;
         std::string depth_folder_;
+        std::string roi_folder_;
         std::string tf_folder_;
         std::string class_;
         bool isRecording_;

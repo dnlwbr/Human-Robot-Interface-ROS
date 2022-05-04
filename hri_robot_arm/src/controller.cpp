@@ -36,7 +36,9 @@ ArmController::ArmController(ros::NodeHandle &nh):
         margin_factor_(1.7),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
         rgb_folder_("rgb"),
+        rgb_full_folder_("rgb_full"),
         depth_folder_("depth"),
+        roi_folder_("roi"),
         tf_folder_("tf")
 {
     ros::NodeHandle pn("~");
@@ -787,11 +789,27 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         cv::Mat bgr_image_cropped;
         filename << std::setw(4) << std::setfill('0') << img_counter_;
         std::string rgb_path_ = current_path_ + "/" + rgb_folder_ + "/" + filename.str() + "_rgb.jpg";
+        std::string rgb_path_full_ = current_path_ + "/" + rgb_full_folder_ + "/" + filename.str() + "_rgb_full.jpg";
         std::string depth_path_ = current_path_ + "/" + depth_folder_ + "/" + filename.str() + "_depth.png";
         cv::cvtColor(rgb_image_cropped.image, bgr_image_cropped, cv::COLOR_RGB2BGR);
+        cv::cvtColor(rgb_image->image, bgr_image_cropped, cv::COLOR_RGB2BGR);
         // TODO Convert depth from 16UC1 to?
         cv::imwrite(rgb_path_, bgr_image_cropped);
+        cv::imwrite(rgb_path_full_, bgr_image_cropped);
         cv::imwrite(depth_path_, depth_image_cropped.image);
+
+        // Save ROI, minPoint2D and maxPoint2D
+        YAML::Node yaml_node_roi;
+        yaml_node_roi["minPoint2D"]["x"] = minPoint2D.x;
+        yaml_node_roi["minPoint2D"]["y"] = minPoint2D.y;
+        yaml_node_roi["maxPoint2D"]["x"] = maxPoint2D.x;
+        yaml_node_roi["maxPoint2D"]["y"] = maxPoint2D.y;
+        yaml_node_roi["croppedROI"]["x"]= x;
+        yaml_node_roi["croppedROI"]["y"]= y;
+        yaml_node_roi["croppedROI"]["width"]= width;
+        yaml_node_roi["croppedROI"]["height"]= height;
+        std::string tf_path_roi = current_path_ + "/" + roi_folder_ + "/" + filename.str() + "_roi.yaml";
+        save_to_disk(tf_path_roi, yaml_node_roi);
 
         // Calculate transformation
         tf2::Transform tf2_root_to_rs2, tf2_box_to_root, tf2_box_to_rs2;
@@ -834,6 +852,8 @@ void ArmController::update_directory() {
         boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
+        boost::filesystem::create_directories(current_path_ + "/rgb_full");
+        boost::filesystem::create_directories(current_path_ + "/roi");
     }
     else
     {
@@ -848,6 +868,8 @@ void ArmController::update_directory() {
         boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
+        boost::filesystem::create_directories(current_path_ + "/rgb_full");
+        boost::filesystem::create_directories(current_path_ + "/roi");
     }
     ROS_INFO_STREAM("Output path: " + current_path_);
 }
