@@ -287,7 +287,7 @@ void CloudSegmentation::min_cut_segmentation(double radius, bool show_background
 
 
 void CloudSegmentation::clustering(bool keepOrganized) {
-    if (cloud_segmented->empty() || cloud_segmented->size() > 50000) {  // Avoid long and futile clustering
+    if (cloud_segmented->empty() || cloud_segmented->size() > 100000) {  // Avoid long and futile clustering
         return;
     }
 
@@ -297,7 +297,7 @@ void CloudSegmentation::clustering(bool keepOrganized) {
 
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(0.005);
-    ec.setMinClusterSize(200);  // Caution: If the value is too big, small objects cannot be detected.
+    ec.setMinClusterSize(200);  // Caution: If the value is too big, small objects cannot be detected (use 1 then).
     ec.setMaxClusterSize(15000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
