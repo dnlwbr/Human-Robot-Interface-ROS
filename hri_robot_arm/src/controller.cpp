@@ -32,11 +32,10 @@ ArmController::ArmController(ros::NodeHandle &nh):
         cloud_segmented_(new PointCloudT),
         isRecording_(false),
         isCamInfoSaved_(false),
-        crop_factor_(0.8),
-        margin_factor_(1.7),
+        margin_factor_(1.0),
         data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
+        rgb_cropped_folder_("rgb_cropped"),
         rgb_folder_("rgb"),
-        rgb_full_folder_("rgb_full"),
         depth_folder_("depth"),
         roi_folder_("roi"),
         tf_folder_("tf")
@@ -765,49 +764,36 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor_);
         int x = (int)(center.x - width/2);
         int y = (int)(center.y - height/2);
-/*
-        // Crop with fixed factor independent of bounding box (results in fixed images size)
-        cv::Point2d center = cv::Point2d(img_msg->width/2.0,img_msg->height/2.0);
-        auto width = (int)(img_msg->width * crop_factor_);
-        auto height = (int)(img_msg->height * crop_factor_);
-        auto x = (int)(center.x - (img_msg->width * crop_factor_)/2.0);
-        auto y = (int)(center.y - (img_msg->height * crop_factor_)/2.0);
-*/
+
         cv::Rect crop_region(x, y, width, height);
-        crop_region = crop_region & cv::Rect(0, 0, img_msg->width, img_msg->height);
+        crop_region &= cv::Rect(0, 0, img_msg->width, img_msg->height);
         if (crop_region.area() == 0) {
             ROS_INFO_STREAM("Cropping area is outside image dimensions. Image will not be saved.");
             return;
         }
         cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
-        cv_bridge::CvImage depth_image_cropped = cv_bridge::CvImage(depth_image->header, depth_image->encoding);
         rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
-        depth_image->image(crop_region).copyTo(depth_image_cropped.image);
 
         // Save rgb and depth image to disk
         std::stringstream filename;
-        cv::Mat bgr_image_cropped;
+        cv::Mat bgr_image, bgr_image_cropped;
         filename << std::setw(4) << std::setfill('0') << img_counter_;
         std::string rgb_path_ = current_path_ + "/" + rgb_folder_ + "/" + filename.str() + "_rgb.jpg";
-        std::string rgb_path_full_ = current_path_ + "/" + rgb_full_folder_ + "/" + filename.str() + "_rgb_full.jpg";
         std::string depth_path_ = current_path_ + "/" + depth_folder_ + "/" + filename.str() + "_depth.png";
+        std::string rgb_cropped_path_ = current_path_ + "/" + rgb_cropped_folder_ + "/" + filename.str() + "_rgb_cropped.jpg";
+        cv::cvtColor(rgb_image->image, bgr_image, cv::COLOR_RGB2BGR);
         cv::cvtColor(rgb_image_cropped.image, bgr_image_cropped, cv::COLOR_RGB2BGR);
-        cv::cvtColor(rgb_image->image, bgr_image_cropped, cv::COLOR_RGB2BGR);
         // TODO Convert depth from 16UC1 to?
-        cv::imwrite(rgb_path_, bgr_image_cropped);
-        cv::imwrite(rgb_path_full_, bgr_image_cropped);
-        cv::imwrite(depth_path_, depth_image_cropped.image);
+        cv::imwrite(rgb_path_, bgr_image);
+        cv::imwrite(depth_path_, depth_image->image);
+        cv::imwrite(rgb_cropped_path_, bgr_image_cropped);
 
-        // Save ROI, minPoint2D and maxPoint2D
+        // Save ROI (without margin)
         YAML::Node yaml_node_roi;
-        yaml_node_roi["minPoint2D"]["x"] = minPoint2D.x;
-        yaml_node_roi["minPoint2D"]["y"] = minPoint2D.y;
-        yaml_node_roi["maxPoint2D"]["x"] = maxPoint2D.x;
-        yaml_node_roi["maxPoint2D"]["y"] = maxPoint2D.y;
-        yaml_node_roi["croppedROI"]["x"]= x;
-        yaml_node_roi["croppedROI"]["y"]= y;
-        yaml_node_roi["croppedROI"]["width"]= width;
-        yaml_node_roi["croppedROI"]["height"]= height;
+        yaml_node_roi["ROI"]["x"] = (int) minPoint2D.x;
+        yaml_node_roi["ROI"]["y"] = (int) minPoint2D.y;
+        yaml_node_roi["ROI"]["width"] = (int)(maxPoint2D.x - minPoint2D.x);
+        yaml_node_roi["ROI"]["height"] = (int)(maxPoint2D.y - minPoint2D.y);
         std::string tf_path_roi = current_path_ + "/" + roi_folder_ + "/" + filename.str() + "_roi.yaml";
         save_to_disk(tf_path_roi, yaml_node_roi);
 
@@ -819,24 +805,25 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         geometry_msgs::Transform tf_rs2_to_box = tf2::toMsg(tf2_box_to_rs2.inverse());
 
         // Save camera-to-box-transformation to disk
-        YAML::Node yaml_node = YAML::Node(tf_rs2_to_box);
+        YAML::Node yaml_node_tf = YAML::Node(tf_rs2_to_box);
         std::string tf_path_ = current_path_ + "/" + tf_folder_ + "/" + filename.str() + "_tf.yaml";
-        save_to_disk(tf_path_, yaml_node);
+        save_to_disk(tf_path_, yaml_node_tf);
 
         // Save camera info to disk (first time only)
         if (!isCamInfoSaved_) {
+            YAML::Node yaml_node_cam_info = YAML::Node(*cam_info);
+            save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node_cam_info);
+
+            // Adjust the camera intrinsics to the cropped images
             sensor_msgs::CameraInfo cam_info_crop = *cam_info;
-            if ((crop_factor_ != 1) || (margin_factor_ != 1)) {
-                // Adjust the camera intrinsics to the cropped images
-                cam_info_crop.height = height;
-                cam_info_crop.width = width;
-                cam_info_crop.K.elems[2] = cam_info_crop.K.elems[2] - (img_msg->width - width) / 2.0;
-                cam_info_crop.K.elems[5] = cam_info_crop.K.elems[5] - (img_msg->height - height) / 2.0;
-                cam_info_crop.P.elems[2] = cam_info_crop.K.elems[2];
-                cam_info_crop.P.elems[6] = cam_info_crop.K.elems[5];
-            }
-            yaml_node = YAML::Node(cam_info_crop);
-            save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node);
+            cam_info_crop.height = height;
+            cam_info_crop.width = width;
+            cam_info_crop.K.elems[2] = cam_info_crop.K.elems[2] - x;
+            cam_info_crop.K.elems[5] = cam_info_crop.K.elems[5] - y;
+            cam_info_crop.P.elems[2] = cam_info_crop.K.elems[2];
+            cam_info_crop.P.elems[6] = cam_info_crop.K.elems[5];
+            YAML::Node yaml_node_cam_info_crop = YAML::Node(cam_info_crop);
+            save_to_disk(current_path_ + "/CameraInfoCropped.yaml", yaml_node_cam_info_crop);
             isCamInfoSaved_ = true;
         }
 
@@ -850,9 +837,9 @@ void ArmController::update_directory() {
         current_path_.append("/" + class_ + "00");
         boost::filesystem::create_directories(current_path_);
         boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + rgb_cropped_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
-        boost::filesystem::create_directories(current_path_ + "/rgb_full");
         boost::filesystem::create_directories(current_path_ + "/roi");
     }
     else
@@ -866,9 +853,9 @@ void ArmController::update_directory() {
         current_path_ = path;
         boost::filesystem::create_directories(current_path_);
         boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+        boost::filesystem::create_directories(current_path_ + "/" + rgb_cropped_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
         boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
-        boost::filesystem::create_directories(current_path_ + "/rgb_full");
         boost::filesystem::create_directories(current_path_ + "/roi");
     }
     ROS_INFO_STREAM("Output path: " + current_path_);

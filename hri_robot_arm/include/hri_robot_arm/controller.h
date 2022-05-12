@@ -140,8 +140,8 @@ namespace hri_arm
         // Recordings
         std::string data_path_;
         std::string current_path_;
+        std::string rgb_cropped_folder_;
         std::string rgb_folder_;
-        std::string rgb_full_folder_;
         std::string depth_folder_;
         std::string roi_folder_;
         std::string tf_folder_;
@@ -149,7 +149,6 @@ namespace hri_arm
         bool isRecording_;
         bool isCamInfoSaved_;
         unsigned int img_counter_{};
-        double crop_factor_;
         double margin_factor_;
 
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
