@@ -813,17 +813,6 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         if (!isCamInfoSaved_) {
             YAML::Node yaml_node_cam_info = YAML::Node(*cam_info);
             save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node_cam_info);
-
-            // Adjust the camera intrinsics to the cropped images
-            sensor_msgs::CameraInfo cam_info_crop = *cam_info;
-            cam_info_crop.height = height;
-            cam_info_crop.width = width;
-            cam_info_crop.K.elems[2] = cam_info_crop.K.elems[2] - x;
-            cam_info_crop.K.elems[5] = cam_info_crop.K.elems[5] - y;
-            cam_info_crop.P.elems[2] = cam_info_crop.K.elems[2];
-            cam_info_crop.P.elems[6] = cam_info_crop.K.elems[5];
-            YAML::Node yaml_node_cam_info_crop = YAML::Node(cam_info_crop);
-            save_to_disk(current_path_ + "/CameraInfoCropped.yaml", yaml_node_cam_info_crop);
             isCamInfoSaved_ = true;
         }
 

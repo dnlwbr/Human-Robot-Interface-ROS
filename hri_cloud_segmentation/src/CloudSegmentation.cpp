@@ -297,7 +297,7 @@ void CloudSegmentation::clustering(bool keepOrganized) {
 
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(0.005);
-    ec.setMinClusterSize(200);  // Caution: If the value is too big, small objects cannot be detected (use 1 then).
+    ec.setMinClusterSize(5);  // Caution: If the value is too big, small objects cannot be detected (use 1 then).
     ec.setMaxClusterSize(15000);
     ec.setSearchMethod(kdtree_cluster);
     ec.setInputCloud(cloud_segmented);
