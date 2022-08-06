@@ -10,7 +10,7 @@ from geometry_msgs.msg import PoseStamped, Transform
 
 def get_list(target_cs=""):
     poses = []
-    tf_list = sorted(Path("/home/weber/Pictures/object_data/Mouse/Mouse02/tf").glob('*_tf.yaml'))
+    tf_list = sorted(Path("/home/weber/Pictures/object_data/stapler/stapler01/tf").glob('*_tf.yaml'))
     for tf_path in tf_list:
         pos = PoseStamped()
 
@@ -91,7 +91,7 @@ def publish():
     pub4 = rospy.Publisher('cam150', PoseStamped, queue_size=1)
     rospy.init_node('talker', anonymous=True)
     rate = rospy.Rate(30)  # 10hz
-    poses_list = get_list("drb")
+    poses_list = get_list("")
     # poses_list = get_list_paper()
     rospy.loginfo("Publish")
     while not rospy.is_shutdown():
@@ -99,11 +99,11 @@ def publish():
         # pub1.publish(poses_list[0])
         pub1.publish(poses_list[0])
         # pub2.publish(poses_list[1])
-        pub2.publish(poses_list[100])
+        pub2.publish(poses_list[50])
         # pub3.publish(poses_list[2])
-        pub3.publish(poses_list[200])
+        pub3.publish(poses_list[100])
         # pub4.publish(poses_list[3])
-        pub4.publish(poses_list[300])
+        pub4.publish(poses_list[150])
         rate.sleep()
 
 

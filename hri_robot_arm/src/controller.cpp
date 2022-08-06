@@ -266,9 +266,10 @@ geometry_msgs::PoseStamped ArmController::generate_gripper_align_pose(const geom
     // computer the orientation of gripper w.r.t. fixed world (root) reference frame. The gripper (z axis) should point(open) to the grasp_pose.
     tf::Quaternion q = EulerZYZ_to_Quaternion(azimuth, polar, rot_gripper_z);
 
+    double correction_term = -0.05; // otherwise the object is a bit too far at the bottom of the image
     pose_msg.pose.position.x = targetpose_msg.position.x + delta_x;
     pose_msg.pose.position.y = targetpose_msg.position.y + delta_y;
-    pose_msg.pose.position.z = targetpose_msg.position.z + delta_z;
+    pose_msg.pose.position.z = targetpose_msg.position.z + delta_z; // + correction_term;
     pose_msg.pose.orientation.x = q.x();
     pose_msg.pose.orientation.y = q.y();
     pose_msg.pose.orientation.z = q.z();
