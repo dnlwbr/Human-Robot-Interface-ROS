@@ -134,8 +134,11 @@ namespace hri_arm
         // Bounding box
         vision_msgs::BoundingBox3D bbox_in_root_frame_;
 
-        // Gaze point
+        // Gaze point (used for segmentation)
         geometry_msgs::Pose gaze_point_;
+
+        // Gaze points (for heat map)
+        std::vector<geometry_msgs::Point> gaze_points_;
 
         // Recordings
         std::string data_path_;
@@ -151,6 +154,8 @@ namespace hri_arm
         unsigned int img_counter_{};
         double margin_factor_;
 
+        bool useSegmentation_;
+
         void get_current_state(const sensor_msgs::JointStateConstPtr &msg);
         void get_current_pose(const geometry_msgs::PoseStampedConstPtr &msg);
 
@@ -165,6 +170,11 @@ namespace hri_arm
         geometry_msgs::Pose calc_inspect_pose(const geometry_msgs::Pose& center, double radius);
 
         static geometry_msgs::PoseStamped generate_gripper_align_pose(const geometry_msgs::Pose& targetpose_msg, double dist, double azimuth, double polar, double rot_gripper_z);
+        static cv::Point2d get_minPoint(const std::vector<cv::Point2d> &points);
+        static cv::Point2d get_maxPoint(const std::vector<cv::Point2d> &points);
+        static cv::Point3d get_minPoint(const std::vector<cv::Point3d> &points);
+        static cv::Point3d get_maxPoint(const std::vector<cv::Point3d> &points);
+        static cv::Point3d get_meanPoint(const std::vector<cv::Point3d> &points);
         void evaluate_plan(moveit::planning_interface::MoveGroupInterface &group);
         void record(const hri_robot_arm::RecordGoalConstPtr &goal);
         geometry_msgs::TransformStamped get_transform_from_to(const std::string& source_frame, const std::string& target_frame);

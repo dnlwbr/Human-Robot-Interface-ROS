@@ -4,6 +4,7 @@ string class_name
 vision_msgs/BoundingBox3D bbox
 geometry_msgs/Point gaze_point
 sensor_msgs/PointCloud2 segmented_cloud
+geometry_msgs/Point[] gaze_points
 ---
 #result
 bool success

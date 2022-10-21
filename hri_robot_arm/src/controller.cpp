@@ -29,6 +29,7 @@ ArmController::ArmController(ros::NodeHandle &nh):
         nh_(nh),
         tf_listener_(tf_buffer_),
         action_server_("/hri_robot_arm/Record", boost::bind(&ArmController::record, this, _1), false),
+        useSegmentation_(false),
         cloud_segmented_(new PointCloudT),
         isRecording_(false),
         isCamInfoSaved_(false),
@@ -358,15 +359,42 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     }
     class_ = goal->class_name;
 
-    // Set segmented cloud
-    pcl::fromROSMsg(goal->segmented_cloud, *cloud_segmented_);
+    if (useSegmentation_) {
+        // Set segmented cloud
+        pcl::fromROSMsg(goal->segmented_cloud, *cloud_segmented_);
 
-    // Convert bounding box to root frame
-    bbox_in_root_frame_ = goal->bbox;
-    geometry_msgs::TransformStamped goal_to_root_frame = convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
+        // Convert bounding box to root frame
+        bbox_in_root_frame_ = goal->bbox;
+        geometry_msgs::TransformStamped goal_to_root_frame = convert_bb_from_to(bbox_in_root_frame_, goal->header.frame_id, "root");
 
-    // Convert gaze point to root frame
-    tf2::doTransform(goal->gaze_point, gaze_point_.position, goal_to_root_frame);
+        // Convert gaze point to root frame
+        tf2::doTransform(goal->gaze_point, gaze_point_.position, goal_to_root_frame);
+    }
+    else {
+        // Convert gaze points to root frame
+        geometry_msgs::TransformStamped goal_to_root_frame = get_transform_from_to(goal->header.frame_id, "root");
+        std::vector<cv::Point3d> gaze_points_cv;
+        for (auto & gaze_point : goal->gaze_points) {
+            geometry_msgs::Point gp_transformed;
+            tf2::doTransform(gaze_point, gp_transformed, goal_to_root_frame);
+            gaze_points_.push_back(gp_transformed);
+            gaze_points_cv.emplace_back(gp_transformed.x, gp_transformed.y, gp_transformed.z);
+        }
+
+        // Calculate borders and center
+        cv::Point3d minPoint3D = get_minPoint(gaze_points_cv);
+        cv::Point3d maxPoint3D = get_maxPoint(gaze_points_cv);
+        cv::Point3d meanPoint3D = ArmController::get_meanPoint(gaze_points_cv);
+
+        // Approximate bounding box through gaze points
+        bbox_in_root_frame_.center.position.x = meanPoint3D.x;
+        bbox_in_root_frame_.center.position.y = meanPoint3D.y;
+        bbox_in_root_frame_.center.position.z = meanPoint3D.z;
+        bbox_in_root_frame_.size.x = maxPoint3D.x - minPoint3D.x;
+        bbox_in_root_frame_.size.y = maxPoint3D.y - minPoint3D.y;
+        bbox_in_root_frame_.size.z = maxPoint3D.z - minPoint3D.z;
+    }
+
 
     ROS_INFO_STREAM("Build workspace");
     clear_workscene();
@@ -384,7 +412,7 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
     ros::WallDuration(0.5).sleep();
 
     bool readjust = false;
-    if (readjust) {
+    if (readjust && useSegmentation_) {
         ROS_INFO("Calculate inspect position");
         double radius = calc_radius();
         geometry_msgs::Pose inspect_pose = calc_inspect_pose(bbox_in_root_frame_.center, radius);
@@ -671,109 +699,146 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
                                                                             "root",
                                                                             "realsense2_color_optical_frame");
 
-        // Points3D: corners of box resp. points of segmented cloud
+        // Points3D: corners of box resp. points of segmented cloud resp. gaze points
         std::vector<cv::Point3d> Points3D = std::vector<cv::Point3d>();
 
-        bool useBox = false;
-        if (useBox) {
-            // Calculate 3D corners
-            Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame.center.position.x,
-                                                       bbox_in_realsense_frame.center.position.y,
-                                                       bbox_in_realsense_frame.center.position.z);
-            Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame.center.orientation.w,
-                                                                bbox_in_realsense_frame.center.orientation.x,
-                                                                bbox_in_realsense_frame.center.orientation.y,
-                                                                bbox_in_realsense_frame.center.orientation.z);
-            Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame.size.x,
-                                                   bbox_in_realsense_frame.size.y,
-                                                   bbox_in_realsense_frame.size.z);
-
-            Eigen::Vector3d Point3D;
-            Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), -size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), -size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), -size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-            Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), -size.z()) / 2);
-            Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
-        }
-        else
-        {
-            // Get transform
-            geometry_msgs::TransformStamped transform = get_transform_from_to(
-                    cloud_segmented_->header.frame_id,
-                    "realsense2_color_optical_frame");
-
-            // Transform cloud from Azure Kinect Frame to RealSense Frame
-            PointCloudT cloud_seg_transformed;
-            pcl_ros::transformPointCloud(*cloud_segmented_, cloud_seg_transformed, transform.transform);
-
-            // Convert to vector
-            for (auto & point : cloud_seg_transformed.points) {
-                Points3D.emplace_back(point.x, point.y, point.z);
-            }
-        }
-
-        // Project 3D corners/cloud points on 2D plane
-        image_geometry::PinholeCameraModel cam_model;
-        cam_model.fromCameraInfo(cam_info);
-        std::vector<cv::Point2d> projected_corners = std::vector<cv::Point2d>();
-        for (auto & point : Points3D) {
-            cv::Point2d point2D = cam_model.project3dToPixel(point);
-            projected_corners.push_back(point2D);
-        }
-
-        // Calculate 2D corners of box
-        double inf = std::numeric_limits<double>::infinity();
-        cv::Point2d minPoint2D(inf, inf);
-        cv::Point2d maxPoint2D(-inf, -inf);
-        for (auto & point : projected_corners)
-        {
-            minPoint2D.x = (point.x < minPoint2D.x) ? point.x : minPoint2D.x;
-            minPoint2D.y = (point.y < minPoint2D.y) ? point.y : minPoint2D.y;
-            maxPoint2D.x = (point.x > maxPoint2D.x) ? point.x : maxPoint2D.x;
-            maxPoint2D.y = (point.y > maxPoint2D.y) ? point.y : maxPoint2D.y;
-        }
-
-        // Crop image to 2D bounding box
+        // Images
         boost::shared_ptr<const cv_bridge::CvImage> rgb_image;
         boost::shared_ptr<const cv_bridge::CvImage> depth_image;
-        try
-        {
-            // Convert message to CvImage
-            rgb_image = cv_bridge::toCvShare(img_msg);
-            depth_image = cv_bridge::toCvShare(depth_msg);
-        }
-        catch (cv_bridge::Exception& e)
-        {
-            ROS_ERROR("cv_bridge exception: %s", e.what());
-        }
 
-        // Crop with extra space (margin)
-        cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
-                                         (int)(maxPoint2D.y + minPoint2D.y) / 2);
-        int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor_);
-        int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor_);
-        int x = (int)(center.x - width/2);
-        int y = (int)(center.y - height/2);
+        // Needed if useSegmentation
+        cv_bridge::CvImage rgb_image_cropped;
+        cv::Point2d minPoint2D;
+        cv::Point2d maxPoint2D;
 
-        cv::Rect crop_region(x, y, width, height);
-        crop_region &= cv::Rect(0, 0, img_msg->width, img_msg->height);
-        if (crop_region.area() == 0) {
-            ROS_INFO_STREAM("Cropping area is outside image dimensions. Image will not be saved.");
-            return;
+        // Needed for gaze points
+        std::vector<cv::Point2d> gaze_points_projected = std::vector<cv::Point2d>();
+
+        if (useSegmentation_) {
+            bool useBox = false;
+            if (useBox) {
+                // Calculate 3D corners
+                Eigen::Vector3d position = Eigen::Vector3d(bbox_in_realsense_frame.center.position.x,
+                                                           bbox_in_realsense_frame.center.position.y,
+                                                           bbox_in_realsense_frame.center.position.z);
+                Eigen::Quaterniond orientation = Eigen::Quaterniond(bbox_in_realsense_frame.center.orientation.w,
+                                                                    bbox_in_realsense_frame.center.orientation.x,
+                                                                    bbox_in_realsense_frame.center.orientation.y,
+                                                                    bbox_in_realsense_frame.center.orientation.z);
+                Eigen::Vector3d size = Eigen::Vector3d(bbox_in_realsense_frame.size.x,
+                                                       bbox_in_realsense_frame.size.y,
+                                                       bbox_in_realsense_frame.size.z);
+
+                Eigen::Vector3d Point3D;
+                Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(size.x(), size.y(), -size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(-size.x(), size.y(), -size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(size.x(), -size.y(), -size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+                Point3D = position + orientation * (Eigen::Vector3d(-size.x(), -size.y(), -size.z()) / 2);
+                Points3D.emplace_back(Point3D.x(), Point3D.y(), Point3D.z());
+            }
+            else
+            {
+                // Get transform
+                geometry_msgs::TransformStamped transform = get_transform_from_to(
+                        cloud_segmented_->header.frame_id,
+                        "realsense2_color_optical_frame");
+
+                // Transform cloud from Azure Kinect Frame to RealSense Frame
+                PointCloudT cloud_seg_transformed;
+                pcl_ros::transformPointCloud(*cloud_segmented_, cloud_seg_transformed, transform.transform);
+
+                // Convert to vector
+                for (auto & point : cloud_seg_transformed.points) {
+                    Points3D.emplace_back(point.x, point.y, point.z);
+                }
+            }
+
+            // Project 3D corners/cloud points on 2D plane
+            image_geometry::PinholeCameraModel cam_model;
+            cam_model.fromCameraInfo(cam_info);
+            std::vector<cv::Point2d> projected_corners = std::vector<cv::Point2d>();
+            for (auto & point : Points3D) {
+                cv::Point2d point2D = cam_model.project3dToPixel(point);
+                projected_corners.push_back(point2D);
+            }
+
+            // Calculate 2D corners of box
+            minPoint2D = get_minPoint(projected_corners);
+            maxPoint2D = get_maxPoint(projected_corners);
+
+            // Get rgb/depth image
+            try
+            {
+                // Convert message to CvImage
+                rgb_image = cv_bridge::toCvShare(img_msg);
+                depth_image = cv_bridge::toCvShare(depth_msg);
+            }
+            catch (cv_bridge::Exception& e)
+            {
+                ROS_ERROR("cv_bridge exception: %s", e.what());
+            }
+
+            // Crop with extra space (margin)
+            cv::Point2i center = cv::Point2i((int)(maxPoint2D.x + minPoint2D.x) / 2,
+                                             (int)(maxPoint2D.y + minPoint2D.y) / 2);
+            int width = (int)((maxPoint2D.x - minPoint2D.x) * margin_factor_);
+            int height = (int)((maxPoint2D.y - minPoint2D.y) * margin_factor_);
+            int x = (int)(center.x - width/2);
+            int y = (int)(center.y - height/2);
+
+            cv::Rect crop_region(x, y, width, height);
+            crop_region &= cv::Rect(0, 0, img_msg->width, img_msg->height);
+            if (crop_region.area() == 0) {
+                ROS_INFO_STREAM("Cropping area is outside image dimensions. Image will not be saved.");
+                return;
+            }
+            rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
+            rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
         }
-        cv_bridge::CvImage rgb_image_cropped = cv_bridge::CvImage(rgb_image->header, rgb_image->encoding);
-        rgb_image->image(crop_region).copyTo(rgb_image_cropped.image);
+        else {
+            // Get transform
+            geometry_msgs::TransformStamped transform = get_transform_from_to(
+                    "root",
+                    "realsense2_color_optical_frame");
+
+            // Transform gaze points from root frame to RealSense Frame
+            for (auto & gaze_point : gaze_points_) {
+                geometry_msgs::Point gp_transformed;
+                tf2::doTransform(gaze_point, gp_transformed, transform);
+                Points3D.emplace_back(gp_transformed.x, gp_transformed.y, gp_transformed.z);
+            }
+
+            // Project gaze points on 2D plane
+            image_geometry::PinholeCameraModel cam_model;
+            cam_model.fromCameraInfo(cam_info);
+            for (auto & point : Points3D) {
+                cv::Point2d point2D = cam_model.project3dToPixel(point);
+                gaze_points_projected.push_back(point2D);
+            }
+
+            // Get rgb/depth image
+            try
+            {
+                // Convert message to CvImage
+                rgb_image = cv_bridge::toCvShare(img_msg);
+                depth_image = cv_bridge::toCvShare(depth_msg);
+            }
+            catch (cv_bridge::Exception& e)
+            {
+                ROS_ERROR("cv_bridge exception: %s", e.what());
+            }
+        }
 
         // Save rgb and depth image to disk
         std::stringstream filename;
@@ -782,21 +847,36 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
         std::string rgb_path_ = current_path_ + "/" + rgb_folder_ + "/" + filename.str() + "_rgb.jpg";
         std::string depth_path_ = current_path_ + "/" + depth_folder_ + "/" + filename.str() + "_depth.png";
         std::string rgb_cropped_path_ = current_path_ + "/" + rgb_cropped_folder_ + "/" + filename.str() + "_rgb_cropped.jpg";
+
         cv::cvtColor(rgb_image->image, bgr_image, cv::COLOR_RGB2BGR);
-        cv::cvtColor(rgb_image_cropped.image, bgr_image_cropped, cv::COLOR_RGB2BGR);
-        // TODO Convert depth from 16UC1 to?
         cv::imwrite(rgb_path_, bgr_image);
         cv::imwrite(depth_path_, depth_image->image);
-        cv::imwrite(rgb_cropped_path_, bgr_image_cropped);
+        if (useSegmentation_) {
+            cv::cvtColor(rgb_image_cropped.image, bgr_image_cropped, cv::COLOR_RGB2BGR);
+            cv::imwrite(rgb_cropped_path_, bgr_image_cropped);
 
-        // Save ROI (without margin)
-        YAML::Node yaml_node_roi;
-        yaml_node_roi["ROI"]["x"] = (int) minPoint2D.x;
-        yaml_node_roi["ROI"]["y"] = (int) minPoint2D.y;
-        yaml_node_roi["ROI"]["width"] = (int)(maxPoint2D.x - minPoint2D.x);
-        yaml_node_roi["ROI"]["height"] = (int)(maxPoint2D.y - minPoint2D.y);
-        std::string tf_path_roi = current_path_ + "/" + roi_folder_ + "/" + filename.str() + "_roi.yaml";
-        save_to_disk(tf_path_roi, yaml_node_roi);
+            // Save ROI (without margin)
+            YAML::Node yaml_node_roi;
+            yaml_node_roi["ROI"]["x"] = (int) minPoint2D.x;
+            yaml_node_roi["ROI"]["y"] = (int) minPoint2D.y;
+            yaml_node_roi["ROI"]["width"] = (int)(maxPoint2D.x - minPoint2D.x);
+            yaml_node_roi["ROI"]["height"] = (int)(maxPoint2D.y - minPoint2D.y);
+            std::string tf_path_roi = current_path_ + "/" + roi_folder_ + "/" + filename.str() + "_roi.yaml";
+            save_to_disk(tf_path_roi, yaml_node_roi);
+        }
+        else {
+            // Save gaze points
+            std::ostringstream gaze_ss;
+            gaze_ss << "X; Y; Z" << std::endl;
+            for (std::size_t i=0; i < gaze_points_projected.size(); ++i) {
+                // TODO use projected, Point3D, or projected + depth img?
+                auto x = gaze_points_projected[i].x;
+                auto y = gaze_points_projected[i].y;
+                auto z = depth_image->image.at<unsigned short>(gaze_points_projected[i]);   // Points3D[i].z
+                gaze_ss << x << ";" << y << ";" << z << std::endl;
+            }
+            save_to_disk(current_path_ + "/gazepoints.csv", gaze_ss.str());
+        }
 
         // Calculate transformation
         tf2::Transform tf2_root_to_rs2, tf2_box_to_root, tf2_box_to_rs2;
@@ -819,6 +899,59 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
 
         img_counter_++;
     }
+}
+
+cv::Point2d ArmController::get_minPoint(const std::vector<cv::Point2d> &points) {
+    double inf = std::numeric_limits<double>::infinity();
+    cv::Point2d minPoint2D(inf, inf);
+    for (auto & point : points)
+    {
+        minPoint2D.x = (point.x < minPoint2D.x) ? point.x : minPoint2D.x;
+        minPoint2D.y = (point.y < minPoint2D.y) ? point.y : minPoint2D.y;
+    }
+    return minPoint2D;
+}
+
+cv::Point2d ArmController::get_maxPoint(const std::vector<cv::Point2d> &points) {
+    double inf = std::numeric_limits<double>::infinity();
+    cv::Point2d maxPoint2D(-inf, -inf);
+    for (auto & point : points)
+    {
+        maxPoint2D.x = (point.x > maxPoint2D.x) ? point.x : maxPoint2D.x;
+        maxPoint2D.y = (point.y > maxPoint2D.y) ? point.y : maxPoint2D.y;
+    }
+    return maxPoint2D;
+}
+
+cv::Point3d ArmController::get_minPoint(const std::vector<cv::Point3d> &points) {
+    double inf = std::numeric_limits<double>::infinity();
+    cv::Point3d minPoint3D(inf, inf, inf);
+    for (auto & point : points)
+    {
+        minPoint3D.x = (point.x < minPoint3D.x) ? point.x : minPoint3D.x;
+        minPoint3D.y = (point.y < minPoint3D.y) ? point.y : minPoint3D.y;
+        minPoint3D.z = (point.z < minPoint3D.z) ? point.z : minPoint3D.z;
+    }
+    return minPoint3D;
+}
+
+cv::Point3d ArmController::get_maxPoint(const std::vector<cv::Point3d> &points) {
+    double inf = std::numeric_limits<double>::infinity();
+    cv::Point3d maxPoint3D(-inf, -inf, -inf);
+    for (auto & point : points)
+    {
+        maxPoint3D.x = (point.x > maxPoint3D.x) ? point.x : maxPoint3D.x;
+        maxPoint3D.y = (point.y > maxPoint3D.y) ? point.y : maxPoint3D.y;
+        maxPoint3D.z = (point.z > maxPoint3D.z) ? point.z : maxPoint3D.z;
+    }
+    return maxPoint3D;
+}
+
+cv::Point3d ArmController::get_meanPoint(const std::vector<cv::Point3d> &points) {
+    cv::Mat mat;
+    cv::reduce(points, mat, 1, CV_REDUCE_AVG);  // mat has dimension 1xN_point with 3 channels
+    cv::Point3d meanPoint3D(mat.at<double>(0,0), mat.at<double>(0,1), mat.at<double>(0,2));
+    return  meanPoint3D;
 }
 
 void ArmController::update_directory() {
