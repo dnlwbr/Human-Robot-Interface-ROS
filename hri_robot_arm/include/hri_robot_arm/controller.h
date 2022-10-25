@@ -148,6 +148,7 @@ namespace hri_arm
         std::string depth_folder_;
         std::string roi_folder_;
         std::string tf_folder_;
+        std::string gaze_folder_;
         std::string class_;
         bool isRecording_;
         bool isCamInfoSaved_;
@@ -186,6 +187,9 @@ namespace hri_arm
         inline void stop_recording() { isRecording_ = false;}
         void update_directory();
         template<class T> void save_to_disk(const std::string& path, T data);
+
+        struct Quantiles {double q25, q50, q75, iqr;};
+        template<class T> Quantiles calc_quantiles(std::vector<T> vec);
     };
 }
 

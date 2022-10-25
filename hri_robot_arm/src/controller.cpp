@@ -34,12 +34,13 @@ ArmController::ArmController(ros::NodeHandle &nh):
         isRecording_(false),
         isCamInfoSaved_(false),
         margin_factor_(1.0),
-        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data"),
+        data_path_(std::string(getenv("HOME")) + "/Pictures/object_data_v2"),
         rgb_cropped_folder_("rgb_cropped"),
         rgb_folder_("rgb"),
         depth_folder_("depth"),
         roi_folder_("roi"),
-        tf_folder_("tf")
+        tf_folder_("tf"),
+        gaze_folder_("gaze")
 {
     ros::NodeHandle pn("~");
 
@@ -374,25 +375,36 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
         // Convert gaze points to root frame
         geometry_msgs::TransformStamped goal_to_root_frame = get_transform_from_to(goal->header.frame_id, "root");
         std::vector<cv::Point3d> gaze_points_cv;
+        std::vector<double> gaze_points_x, gaze_points_y, gaze_points_z;
         for (auto & gaze_point : goal->gaze_points) {
             geometry_msgs::Point gp_transformed;
             tf2::doTransform(gaze_point, gp_transformed, goal_to_root_frame);
             gaze_points_.push_back(gp_transformed);
-            gaze_points_cv.emplace_back(gp_transformed.x, gp_transformed.y, gp_transformed.z);
+            //gaze_points_cv.emplace_back(gp_transformed.x, gp_transformed.y, gp_transformed.z);
+            gaze_points_x.emplace_back(gp_transformed.x);
+            gaze_points_y.emplace_back(gp_transformed.y);
+            gaze_points_z.emplace_back(gp_transformed.z);
         }
+        // TODO use initial gaze point to filter (center +- 2*stdv) / as center
 
         // Calculate borders and center
-        cv::Point3d minPoint3D = get_minPoint(gaze_points_cv);
-        cv::Point3d maxPoint3D = get_maxPoint(gaze_points_cv);
-        cv::Point3d meanPoint3D = ArmController::get_meanPoint(gaze_points_cv);
+//        cv::Point3d minPoint3D = get_minPoint(gaze_points_cv);
+//        cv::Point3d maxPoint3D = get_maxPoint(gaze_points_cv);
+//        cv::Point3d meanPoint3D = get_meanPoint(gaze_points_cv);
+
+        auto const quantiles_x = calc_quantiles(gaze_points_x);
+        auto const quantiles_y = calc_quantiles(gaze_points_y);
+        auto const quantiles_z = calc_quantiles(gaze_points_z);
 
         // Approximate bounding box through gaze points
-        bbox_in_root_frame_.center.position.x = meanPoint3D.x;
-        bbox_in_root_frame_.center.position.y = meanPoint3D.y;
-        bbox_in_root_frame_.center.position.z = meanPoint3D.z;
-        bbox_in_root_frame_.size.x = maxPoint3D.x - minPoint3D.x;
-        bbox_in_root_frame_.size.y = maxPoint3D.y - minPoint3D.y;
-        bbox_in_root_frame_.size.z = maxPoint3D.z - minPoint3D.z;
+        bbox_in_root_frame_.center.position.x = quantiles_x.q50;
+        bbox_in_root_frame_.center.position.y = quantiles_y.q50;
+        bbox_in_root_frame_.center.position.z = quantiles_z.q50;
+        // Values below q25-1.5*iqr and above q75+1.5*iqr are outliers
+        // q75+1.5*iqr - (q25-1.5*iqr) = q75 - q25 + 3*iqr = 4*iqr
+        bbox_in_root_frame_.size.x = 4 * quantiles_x.iqr;
+        bbox_in_root_frame_.size.y = 4 * quantiles_y.iqr;
+        bbox_in_root_frame_.size.z = 4 * quantiles_z.iqr;
     }
 
 
@@ -869,13 +881,13 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             std::ostringstream gaze_ss;
             gaze_ss << "X; Y; Z" << std::endl;
             for (std::size_t i=0; i < gaze_points_projected.size(); ++i) {
-                // TODO use projected, Point3D, or projected + depth img?
                 auto x = gaze_points_projected[i].x;
                 auto y = gaze_points_projected[i].y;
                 auto z = depth_image->image.at<unsigned short>(gaze_points_projected[i]);   // Points3D[i].z
                 gaze_ss << x << ";" << y << ";" << z << std::endl;
             }
-            save_to_disk(current_path_ + "/gazepoints.csv", gaze_ss.str());
+            std::string gaze_path = current_path_ + "/" + gaze_folder_ + "/" + filename.str() + "_gazepoints.csv";
+            save_to_disk(gaze_path, gaze_ss.str());
         }
 
         // Calculate transformation
@@ -895,12 +907,47 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             YAML::Node yaml_node_cam_info = YAML::Node(*cam_info);
             save_to_disk(current_path_ + "/CameraInfo.yaml", yaml_node_cam_info);
             isCamInfoSaved_ = true;
+
+            if (!useSegmentation_) {
+                std::ostringstream gaze_ss;
+                gaze_ss << "X; Y; Z" << std::endl;
+                for (std::size_t i=0; i < gaze_points_.size(); ++i) {
+                    auto x = gaze_points_[i].x;
+                    auto y = gaze_points_[i].y;
+                    auto z = gaze_points_[i].z;
+                    gaze_ss << x << ";" << y << ";" << z << std::endl;
+                }
+                std::string gaze_path = current_path_ + "/gazepoints_root.csv";
+                save_to_disk(gaze_path, gaze_ss.str());
+            }
         }
 
         img_counter_++;
     }
 }
 
+template<class T>
+ArmController::Quantiles ArmController::calc_quantiles(std::vector<T> vec) {
+    // Note: Pseudo quantiles because if vector size is even, the real median is mean of the two values above and below
+
+    auto const Q1 = vec.size() / 4;
+    auto const Q2 = vec.size() / 2;
+    auto const Q3 = Q1 + Q2;
+
+    std::nth_element(vec.begin(),          vec.begin() + Q1, vec.end());
+    std::nth_element(vec.begin() + Q1 + 1, vec.begin() + Q2, vec.end());
+    std::nth_element(vec.begin() + Q2 + 1, vec.begin() + Q3, vec.end());
+
+    Quantiles quantiles;
+    quantiles.q25 = vec.at(Q1);
+    quantiles.q50 = vec.at(Q2);
+    quantiles.q75 = vec.at(Q3);
+    quantiles.iqr = vec[Q3] - vec[Q1];
+
+    return quantiles;
+}
+
+/// Pointwise (coordinates are independent from each other).
 cv::Point2d ArmController::get_minPoint(const std::vector<cv::Point2d> &points) {
     double inf = std::numeric_limits<double>::infinity();
     cv::Point2d minPoint2D(inf, inf);
@@ -912,6 +959,7 @@ cv::Point2d ArmController::get_minPoint(const std::vector<cv::Point2d> &points) 
     return minPoint2D;
 }
 
+/// Pointwise (coordinates are independent from each other).
 cv::Point2d ArmController::get_maxPoint(const std::vector<cv::Point2d> &points) {
     double inf = std::numeric_limits<double>::infinity();
     cv::Point2d maxPoint2D(-inf, -inf);
@@ -923,6 +971,7 @@ cv::Point2d ArmController::get_maxPoint(const std::vector<cv::Point2d> &points) 
     return maxPoint2D;
 }
 
+/// Pointwise (coordinates are independent from each other).
 cv::Point3d ArmController::get_minPoint(const std::vector<cv::Point3d> &points) {
     double inf = std::numeric_limits<double>::infinity();
     cv::Point3d minPoint3D(inf, inf, inf);
@@ -935,6 +984,7 @@ cv::Point3d ArmController::get_minPoint(const std::vector<cv::Point3d> &points) 
     return minPoint3D;
 }
 
+/// Pointwise (coordinates are independent from each other).
 cv::Point3d ArmController::get_maxPoint(const std::vector<cv::Point3d> &points) {
     double inf = std::numeric_limits<double>::infinity();
     cv::Point3d maxPoint3D(-inf, -inf, -inf);
@@ -947,6 +997,7 @@ cv::Point3d ArmController::get_maxPoint(const std::vector<cv::Point3d> &points) 
     return maxPoint3D;
 }
 
+/// Pointwise (coordinates are independent from each other).
 cv::Point3d ArmController::get_meanPoint(const std::vector<cv::Point3d> &points) {
     cv::Mat mat;
     cv::reduce(points, mat, 1, CV_REDUCE_AVG);  // mat has dimension 1xN_point with 3 channels
@@ -958,12 +1009,6 @@ void ArmController::update_directory() {
     current_path_ = data_path_ + "/" + class_;
     if (!boost::filesystem::exists(current_path_)) {
         current_path_.append("/" + class_ + "00");
-        boost::filesystem::create_directories(current_path_);
-        boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
-        boost::filesystem::create_directories(current_path_ + "/" + rgb_cropped_folder_);
-        boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
-        boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
-        boost::filesystem::create_directories(current_path_ + "/roi");
     }
     else
     {
@@ -974,12 +1019,17 @@ void ArmController::update_directory() {
             path = ss.str();
         }
         current_path_ = path;
-        boost::filesystem::create_directories(current_path_);
-        boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+    }
+    boost::filesystem::create_directories(current_path_);
+    boost::filesystem::create_directories(current_path_ + "/" + rgb_folder_);
+    boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
+    boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
+    if (useSegmentation_) {
         boost::filesystem::create_directories(current_path_ + "/" + rgb_cropped_folder_);
-        boost::filesystem::create_directories(current_path_ + "/" + depth_folder_);
-        boost::filesystem::create_directories(current_path_ + "/" + tf_folder_);
         boost::filesystem::create_directories(current_path_ + "/roi");
+    }
+    else {
+        boost::filesystem::create_directories(current_path_ + "/" + gaze_folder_);
     }
     ROS_INFO_STREAM("Output path: " + current_path_);
 }
