@@ -402,9 +402,10 @@ void ArmController::record(const hri_robot_arm::RecordGoalConstPtr &goal)
         bbox_in_root_frame_.center.position.z = quantiles_z.q50;
         // Values below q25-1.5*iqr and above q75+1.5*iqr are outliers
         // q75+1.5*iqr - (q25-1.5*iqr) = q75 - q25 + 3*iqr = 4*iqr
-        bbox_in_root_frame_.size.x = 4 * quantiles_x.iqr;
-        bbox_in_root_frame_.size.y = 4 * quantiles_y.iqr;
-        bbox_in_root_frame_.size.z = 4 * quantiles_z.iqr;
+        // But: 3*iqr results in a more suitable size than 4*iqr
+        bbox_in_root_frame_.size.x = 3 * quantiles_x.iqr;
+        bbox_in_root_frame_.size.y = 3 * quantiles_y.iqr;
+        bbox_in_root_frame_.size.z = 3 * quantiles_z.iqr;
     }
 
 
@@ -883,7 +884,7 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
             for (std::size_t i=0; i < gaze_points_projected.size(); ++i) {
                 auto x = gaze_points_projected[i].x;
                 auto y = gaze_points_projected[i].y;
-                auto z = depth_image->image.at<unsigned short>(gaze_points_projected[i]);   // Points3D[i].z
+                auto z = sqrt(pow(Points3D[i].x, 2) + pow(Points3D[i].y, 2) + pow(Points3D[i].z, 2));
                 gaze_ss << x << ";" << y << ";" << z << std::endl;
             }
             std::string gaze_path = current_path_ + "/" + gaze_folder_ + "/" + filename.str() + "_gazepoints.csv";
