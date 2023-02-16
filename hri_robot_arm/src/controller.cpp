@@ -920,6 +920,34 @@ void ArmController::callback_camera(const sensor_msgs::ImageConstPtr& img_msg,
                 }
                 std::string gaze_path = current_path_ + "/gazepoints_root.csv";
                 save_to_disk(gaze_path, gaze_ss.str());
+
+                // Save gaze points in image plane of Azure Kinect (Robot's body cam)
+                Points3D.clear();
+                gaze_points_projected.clear();
+                geometry_msgs::TransformStamped transform = get_transform_from_to("root", "azure_kinect_rgb_camera_link");
+                for (auto & gaze_point : gaze_points_) {
+                    geometry_msgs::Point gp_transformed;
+                    tf2::doTransform(gaze_point, gp_transformed, transform);
+                    Points3D.emplace_back(gp_transformed.x, gp_transformed.y, gp_transformed.z);
+                }
+//                boost::shared_ptr<sensor_msgs::CameraInfo const> cam_info_kinect;
+                sensor_msgs::CameraInfoConstPtr cam_info_kinect;
+                cam_info_kinect = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/azure_kinect/rgb/camera_info");
+                image_geometry::PinholeCameraModel cam_model;
+                cam_model.fromCameraInfo(cam_info_kinect);
+                for (auto & point : Points3D) {
+                    cv::Point2d point2D = cam_model.project3dToPixel(point);
+                    gaze_points_projected.push_back(point2D);
+                }
+                gaze_ss.str("");
+                gaze_ss << "X; Y" << std::endl;
+                for (std::size_t i=0; i < gaze_points_projected.size(); ++i) {
+                    auto x = gaze_points_projected[i].x;
+                    auto y = gaze_points_projected[i].y;
+                    gaze_ss << x << ";" << y << std::endl;
+                }
+                gaze_path = current_path_ + "/gazepoints_kinect.csv";
+                save_to_disk(gaze_path, gaze_ss.str());
             }
         }
 
