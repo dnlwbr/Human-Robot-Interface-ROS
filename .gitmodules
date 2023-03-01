@@ -1,6 +1,3 @@
-[submodule "external/geometry2"]
-	path = external/geometry2
-	url = https://github.com/ros/geometry2.git
 [submodule "external/orocos_kinematics_dynamics"]
 	path = external/orocos_kinematics_dynamics
 	url = https://github.com/orocos/orocos_kinematics_dynamics.git
