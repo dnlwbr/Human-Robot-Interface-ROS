@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+
+<launch>
+
+	<node name="image_proc" pkg="image_proc" type="image_proc" ns="rgb" output="screen" />
+
+	<node name="hri_cloud_segmentation" pkg="hri_cloud_segmentation" type="hri_cloud_segmentation" output="screen" />
+
+</launch>

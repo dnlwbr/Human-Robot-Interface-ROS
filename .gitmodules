@@ -1,0 +1,6 @@
+[submodule "external/orocos_kinematics_dynamics"]
+	path = external/orocos_kinematics_dynamics
+	url = https://github.com/orocos/orocos_kinematics_dynamics.git
+[submodule "external/ros-sharp"]
+	path = external/ros-sharp
+	url = https://github.com/EricVoll/ros-sharp.git
